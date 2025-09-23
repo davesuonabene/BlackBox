@@ -14,7 +14,7 @@
 *.hex
 
 # DaisySP build outputs
-DaisySP/
+/DaisySP/
 DaisySP/build/
 DaisySP/**/build/
 DaisySP/**/CMakeFiles/
@@ -22,7 +22,7 @@ DaisySP/**/CMakeCache.txt
 DaisySP/**/cmake-build-*/
 
 # libDaisy build outputs
-libDaisy/
+/libDaisy/
 libDaisy/build/
 libDaisy/**/build/
 libDaisy/**/CMakeFiles/
