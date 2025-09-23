@@ -21,8 +21,8 @@ void Processing::Init(Hardware &hw)
 
 void Processing::Controls(Hardware &hw)
 {
-    feedback    = hw.feedback_knob.Process() * 0.98f;
-    dry_wet_mix = hw.mix_knob.Process();
+    float pot1 = hw.feedback_knob.Process(); // Pot1
+    float pot2 = hw.mix_knob.Process();      // Pot2
     hw.time_encoder.Debounce();
     hw.aux_encoder.Debounce();
     hw.tap_switch.Debounce();
@@ -48,23 +48,70 @@ void Processing::Controls(Hardware &hw)
         last_tap_time = now;
     }
 
-    int32_t encoder_inc = hw.time_encoder.Increment();
-    if(encoder_inc != 0)
+    // Enc1 scrolls params
+    int32_t enc1_inc = hw.time_encoder.Increment();
+    if(enc1_inc != 0)
     {
-        float scale_factor = 500.0f;
-        time_as_float += encoder_inc * scale_factor;
+        selected_param += (enc1_inc > 0 ? 1 : -1);
+        if(selected_param < 0)
+            selected_param = PARAM_COUNT - 1;
+        if(selected_param >= PARAM_COUNT)
+            selected_param = 0;
     }
 
-    // Aux encoder increments counter
-    int32_t aux_inc = hw.aux_encoder.Increment();
-    if(aux_inc != 0)
-        aux_count += aux_inc;
+    // Enc2 edits selected param
+    int32_t enc2_inc = hw.aux_encoder.Increment();
+    if(enc2_inc != 0)
+    {
+        switch(selected_param)
+        {
+            case PARAM_MIX:
+                dry_wet_mix = fclamp(dry_wet_mix + enc2_inc * 0.01f, 0.0f, 1.0f);
+                break;
+            case PARAM_FEEDBACK:
+                feedback = fclamp(feedback + enc2_inc * 0.01f, 0.0f, 0.98f);
+                break;
+            case PARAM_DELAY: {
+                float scale_factor = 500.0f;
+                time_as_float += enc2_inc * scale_factor;
+            } break;
+            default: break;
+        }
+    }
 
     // Latch encoder clicks as events to be handled in main loop/UI
     if(hw.time_encoder.RisingEdge() || hw.aux_encoder.RisingEdge())
     {
         enc_click_pending = true;
         enc_click_time    = System::GetNow();
+    }
+
+    // Hold-to-assign: long hold Enc1 assigns Pot1; long hold Enc2 assigns Pot2 to current param
+    const uint32_t hold_ms = 600;
+    if(hw.time_encoder.Pressed() && hw.time_encoder.TimeHeldMs() >= hold_ms)
+        master_of_param[selected_param] = 1;
+    if(hw.aux_encoder.Pressed() && hw.aux_encoder.TimeHeldMs() >= hold_ms)
+        master_of_param[selected_param] = 2;
+
+    // Apply pots to their assigned params
+    for(int p = 0; p < PARAM_COUNT; ++p)
+    {
+        int m = master_of_param[p];
+        if(m == 0)
+            continue;
+        float v = (m == 1) ? pot1 : pot2;
+        switch(p)
+        {
+            case PARAM_MIX:      dry_wet_mix = v; break;
+            case PARAM_FEEDBACK: feedback = v * 0.98f; break;
+            case PARAM_DELAY: {
+                // Map pot [0..1] to useful delay range
+                float min_delay = 100.0f;
+                float max_delay = (float)MAX_DELAY - 4.f;
+                time_as_float   = fclamp(min_delay + v * (max_delay - min_delay), min_delay, max_delay);
+            } break;
+            default: break;
+        }
     }
 
     float min_delay = 100.0f;

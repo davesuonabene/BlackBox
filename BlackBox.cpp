@@ -67,7 +67,10 @@ int main(void)
             g_screen.DrawStatus(mix_pct,
                                 fbk_pct,
                                 static_cast<uint32_t>(g_proc.current_delay / g_hw.sample_rate * 1000.f),
-                                g_proc.aux_count,
+                                g_proc.selected_param,
+                                g_proc.master_of_param[g_proc.PARAM_MIX],
+                                g_proc.master_of_param[g_proc.PARAM_FEEDBACK],
+                                g_proc.master_of_param[g_proc.PARAM_DELAY],
                                 true);
         }
 

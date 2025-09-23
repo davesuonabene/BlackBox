@@ -20,9 +20,14 @@ struct Processing
     uint32_t last_tap_time = 0;
     bool     lfo_active    = false;
     bool     is_clearing   = false;
-    int32_t  aux_count     = 0;
     bool     enc_click_pending = false;
     uint32_t enc_click_time    = 0;
+
+    // UI: param selection and pot-master mapping
+    enum Param { PARAM_MIX = 0, PARAM_FEEDBACK, PARAM_DELAY, PARAM_COUNT };
+    int selected_param = PARAM_MIX;
+    // 0 = none, 1 = Pot1 (feedback_knob), 2 = Pot2 (mix_knob)
+    int master_of_param[PARAM_COUNT] = {0, 0, 0};
 
     void Init(Hardware &hw);
     void Controls(Hardware &hw);

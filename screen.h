@@ -15,11 +15,14 @@ struct Screen
 
     void Blink(uint32_t now);
 
-    void DrawStatus(int mix_pct,
-                    int fbk_pct,
+    void DrawStatus(int      mix_pct,
+                    int      fbk_pct,
                     uint32_t delay_ms,
-                    int32_t enc2_count,
-                    bool rotated180);
+                    int      selected_param,
+                    int      master_mix,
+                    int      master_fbk,
+                    int      master_delay,
+                    bool     rotated180);
 };
 
 

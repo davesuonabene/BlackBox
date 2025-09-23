@@ -77,7 +77,10 @@ void Screen::Blink(uint32_t now)
 void Screen::DrawStatus(int      mix_pct,
                         int      fbk_pct,
                         uint32_t delay_ms,
-                        int32_t  enc2_count,
+                        int      selected_param,
+                        int      master_mix,
+                        int      master_fbk,
+                        int      master_delay,
                         bool     rotated180)
 {
     if(blink_active && (System::GetNow() - blink_start) < 120)
@@ -90,35 +93,48 @@ void Screen::DrawStatus(int      mix_pct,
         blink_active = false;
 
     display.Fill(false);
-    char line[32];
+    char line[48];
+    auto MasterStr = [](int m) -> const char*
+    {
+        switch(m)
+        {
+            case 1: return " (P1)";
+            case 2: return " (P2)";
+            default: return "";
+        }
+    };
     if(rotated180)
     {
         DrawStringRot180(display, 0, 0, "BlackBox", Font_7x10, true);
-        snprintf(line, sizeof(line), "Mix: %3d%%", mix_pct);
+        snprintf(line, sizeof(line), "%sMix: %3d%%%s",
+                 selected_param == 0 ? "> " : "  ", mix_pct, MasterStr(master_mix));
         DrawStringRot180(display, 0, 14, line, Font_6x8, true);
-        snprintf(line, sizeof(line), "Fbk: %3d%%", fbk_pct);
+        snprintf(line, sizeof(line), "%sFbk: %3d%% %s",
+                 selected_param == 1 ? "> " : "  ", fbk_pct, MasterStr(master_fbk));
         DrawStringRot180(display, 0, 24, line, Font_6x8, true);
-        snprintf(line, sizeof(line), "Delay: %lu ms", (unsigned long)delay_ms);
+        snprintf(line, sizeof(line), "%sDelay: %lu ms%s",
+                 selected_param == 2 ? "> " : "  ", (unsigned long)delay_ms, MasterStr(master_delay));
         DrawStringRot180(display, 0, 34, line, Font_6x8, true);
-        snprintf(line, sizeof(line), "Enc2: %ld", (long)enc2_count);
-        DrawStringRot180(display, 0, 44, line, Font_6x8, true);
+        DrawStringRot180(display, 0, 44, "Hold Enc1/Enc2: assign Pot1/Pot2", Font_6x8, true);
     }
     else
     {
         display.SetCursor(0, 0);
         display.WriteString("BlackBox", Font_7x10, true);
         display.SetCursor(0, 14);
-        snprintf(line, sizeof(line), "Mix: %3d%%", mix_pct);
+        snprintf(line, sizeof(line), "%sMix: %3d%%%s",
+                 selected_param == 0 ? "> " : "  ", mix_pct, MasterStr(master_mix));
         display.WriteString(line, Font_6x8, true);
         display.SetCursor(0, 24);
-        snprintf(line, sizeof(line), "Fbk: %3d%%", fbk_pct);
+        snprintf(line, sizeof(line), "%sFbk: %3d%% %s",
+                 selected_param == 1 ? "> " : "  ", fbk_pct, MasterStr(master_fbk));
         display.WriteString(line, Font_6x8, true);
         display.SetCursor(0, 34);
-        snprintf(line, sizeof(line), "Delay: %lu ms", (unsigned long)delay_ms);
+        snprintf(line, sizeof(line), "%sDelay: %lu ms%s",
+                 selected_param == 2 ? "> " : "  ", (unsigned long)delay_ms, MasterStr(master_delay));
         display.WriteString(line, Font_6x8, true);
         display.SetCursor(0, 44);
-        snprintf(line, sizeof(line), "Enc2: %ld", (long)enc2_count);
-        display.WriteString(line, Font_6x8, true);
+        display.WriteString("Hold Enc1/Enc2: assign Pot1/Pot2", Font_6x8, true);
     }
     display.Update();
 }
