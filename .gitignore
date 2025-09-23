@@ -34,12 +34,6 @@ CMakeFiles/
 CMakeCache.txt
 cmake-build-*/
 
-# IDE/settings
-.vscode/
-.vs/
-.idea/
-*.code-workspace
-
 # OS/user junk
 .DS_Store
 Thumbs.db
