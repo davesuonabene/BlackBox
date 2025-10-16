@@ -24,10 +24,20 @@ struct Processing
     uint32_t enc_click_time    = 0;
 
     // UI: param selection and pot-master mapping
-    enum Param { PARAM_MIX = 0, PARAM_FEEDBACK, PARAM_DELAY, PARAM_COUNT };
+    enum Param { PARAM_MIX = 0, PARAM_FEEDBACK, PARAM_BPM, PARAM_DIVISION, PARAM_COUNT };
     int selected_param = PARAM_MIX;
     // 0 = none, 1 = Pot1 (feedback_knob), 2 = Pot2 (mix_knob)
-    int master_of_param[PARAM_COUNT] = {0, 0, 0};
+    int master_of_param[PARAM_COUNT] = {0, 0, 0, 0};
+
+    // Debounce flags for long-hold assignment toggle per encoder
+    bool hold_assigned_time = false;
+    bool hold_assigned_aux  = false;
+
+    // Tempo in beats per minute for quarter-note delay
+    float bpm = 120.0f;
+
+    // Division denominator: 1 (quarter), 2 (eighth), 3 (triplet), 4 (sixteenth)
+    int division = 1;
 
     void Init(Hardware &hw);
     void Controls(Hardware &hw);

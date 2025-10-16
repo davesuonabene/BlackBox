@@ -14,6 +14,10 @@ void Processing::Init(Hardware &hw)
     osc.SetWaveform(Oscillator::WAVE_SIN);
 
     time_as_float = hw.sample_rate * 0.5f;
+    // derive bpm from initial delay (consider division)
+    float delay_ms = (time_as_float / hw.sample_rate) * 1000.0f;
+    if(delay_ms > 0.0f)
+        bpm = (60000.0f / delay_ms) * division;
     fonepole(current_delay, time_as_float, 1.f);
     dell.SetDelay(current_delay);
     delr.SetDelay(current_delay);
@@ -44,7 +48,15 @@ void Processing::Controls(Hardware &hw)
         uint32_t now      = System::GetNow();
         uint32_t tap_diff = now - last_tap_time;
         if(tap_diff < MAX_TAP_INTERVAL)
-            time_as_float = static_cast<float>(tap_diff) * 0.001f * hw.sample_rate;
+        {
+            // Set delay from tap, and also reset BPM to tapped tempo
+            float tapped_ms   = static_cast<float>(tap_diff);
+            // The displayed BPM is for quarter notes; division scales the effective delay
+            if(tapped_ms > 0.0f)
+                bpm = 60000.0f / tapped_ms;  // Set BPM from tap interval
+            float eff_ms = 60000.0f / (bpm / division);  // Apply division to get effective delay
+            time_as_float = eff_ms * 0.001f * hw.sample_rate;
+        }
         last_tap_time = now;
     }
 
@@ -71,9 +83,27 @@ void Processing::Controls(Hardware &hw)
             case PARAM_FEEDBACK:
                 feedback = fclamp(feedback + enc2_inc * 0.01f, 0.0f, 0.98f);
                 break;
-            case PARAM_DELAY: {
-                float scale_factor = 500.0f;
-                time_as_float += enc2_inc * scale_factor;
+            case PARAM_BPM: {
+                // Adjust BPM directly (twice as fast), map to delay time considering division
+                float new_bpm = bpm + enc2_inc * 1.0f;
+                // Reasonable BPM range
+                new_bpm = fclamp(new_bpm, 20.0f, 300.0f);
+                bpm     = new_bpm;
+                float delay_ms = 60000.0f / (bpm / division);
+                time_as_float  = delay_ms * 0.001f * hw.sample_rate;
+            } break;
+            case PARAM_DIVISION: {
+                // Cycle division among {1,2,3,4}
+                int vals[4] = {1, 2, 3, 4};
+                // compute index
+                int idx = 0;
+                for(int i = 0; i < 4; ++i) if(vals[i] == division) { idx = i; break; }
+                idx += (enc2_inc > 0 ? 1 : -1);
+                if(idx < 0) idx = 3;
+                if(idx > 3) idx = 0;
+                division = vals[idx];
+                float delay_ms = 60000.0f / (bpm / division);
+                time_as_float  = delay_ms * 0.001f * hw.sample_rate;
             } break;
             default: break;
         }
@@ -86,12 +116,32 @@ void Processing::Controls(Hardware &hw)
         enc_click_time    = System::GetNow();
     }
 
-    // Hold-to-assign: long hold Enc1 assigns Pot1; long hold Enc2 assigns Pot2 to current param
+    // Hold-to-assign toggle: long hold Enc1 toggles Pot1; long hold Enc2 toggles Pot2 for current param
     const uint32_t hold_ms = 600;
     if(hw.time_encoder.Pressed() && hw.time_encoder.TimeHeldMs() >= hold_ms)
-        master_of_param[selected_param] = 1;
+    {
+        if(!hold_assigned_time)
+        {
+            hold_assigned_time = true;
+            master_of_param[selected_param] = (master_of_param[selected_param] == 1) ? 0 : 1;
+        }
+    }
+    else
+    {
+        hold_assigned_time = false;
+    }
     if(hw.aux_encoder.Pressed() && hw.aux_encoder.TimeHeldMs() >= hold_ms)
-        master_of_param[selected_param] = 2;
+    {
+        if(!hold_assigned_aux)
+        {
+            hold_assigned_aux = true;
+            master_of_param[selected_param] = (master_of_param[selected_param] == 2) ? 0 : 2;
+        }
+    }
+    else
+    {
+        hold_assigned_aux = false;
+    }
 
     // Apply pots to their assigned params
     for(int p = 0; p < PARAM_COUNT; ++p)
@@ -104,11 +154,22 @@ void Processing::Controls(Hardware &hw)
         {
             case PARAM_MIX:      dry_wet_mix = v; break;
             case PARAM_FEEDBACK: feedback = v * 0.98f; break;
-            case PARAM_DELAY: {
-                // Map pot [0..1] to useful delay range
-                float min_delay = 100.0f;
-                float max_delay = (float)MAX_DELAY - 4.f;
-                time_as_float   = fclamp(min_delay + v * (max_delay - min_delay), min_delay, max_delay);
+            case PARAM_BPM: {
+                // Map pot [0..1] to BPM range
+                float min_bpm = 20.0f;
+                float max_bpm = 300.0f;
+                bpm = fclamp(min_bpm + v * (max_bpm - min_bpm), min_bpm, max_bpm);
+                float delay_ms = 60000.0f / (bpm / division);
+                time_as_float  = delay_ms * 0.001f * hw.sample_rate;
+            } break;
+            case PARAM_DIVISION: {
+                // Pot toggles among 4 positions across range
+                int idx = (int)(v * 4.0f);
+                if(idx > 3) idx = 3;
+                int vals[4] = {1, 2, 3, 4};
+                division = vals[idx];
+                float delay_ms = 60000.0f / (bpm / division);
+                time_as_float  = delay_ms * 0.001f * hw.sample_rate;
             } break;
             default: break;
         }

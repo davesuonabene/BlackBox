@@ -77,10 +77,13 @@ void Screen::Blink(uint32_t now)
 void Screen::DrawStatus(int      mix_pct,
                         int      fbk_pct,
                         uint32_t delay_ms,
+                        int      bpm,
+                        int      division,
                         int      selected_param,
                         int      master_mix,
                         int      master_fbk,
-                        int      master_delay,
+                        int      master_bpm,
+                        int      master_division,
                         bool     rotated180)
 {
     if(blink_active && (System::GetNow() - blink_start) < 120)
@@ -105,17 +108,20 @@ void Screen::DrawStatus(int      mix_pct,
     };
     if(rotated180)
     {
-        DrawStringRot180(display, 0, 0, "BlackBox", Font_7x10, true);
+        //DrawStringRot180(display, 0, 0, "BlackBox", Font_7x10, true);
         snprintf(line, sizeof(line), "%sMix: %3d%%%s",
                  selected_param == 0 ? "> " : "  ", mix_pct, MasterStr(master_mix));
-        DrawStringRot180(display, 0, 14, line, Font_6x8, true);
+        DrawStringRot180(display, 0, 14, line, Font_7x10, true);
         snprintf(line, sizeof(line), "%sFbk: %3d%% %s",
                  selected_param == 1 ? "> " : "  ", fbk_pct, MasterStr(master_fbk));
-        DrawStringRot180(display, 0, 24, line, Font_6x8, true);
-        snprintf(line, sizeof(line), "%sDelay: %lu ms%s",
-                 selected_param == 2 ? "> " : "  ", (unsigned long)delay_ms, MasterStr(master_delay));
-        DrawStringRot180(display, 0, 34, line, Font_6x8, true);
-        DrawStringRot180(display, 0, 44, "Hold Enc1/Enc2: assign Pot1/Pot2", Font_6x8, true);
+        DrawStringRot180(display, 0, 24, line, Font_7x10, true);
+        snprintf(line, sizeof(line), "%sBPM: %3d BPM%s",
+                 selected_param == 2 ? "> " : "  ", bpm, MasterStr(master_bpm));
+        DrawStringRot180(display, 0, 34, line, Font_7x10, true);
+        snprintf(line, sizeof(line), "%sDiv: 1/%d%s",
+                 selected_param == 3 ? "> " : "  ", division, MasterStr(master_division));
+        DrawStringRot180(display, 0, 44, line, Font_7x10, true);
+        //DrawStringRot180(display, 0, 44, "Hold Enc1/Enc2: assign Pot1/Pot2", Font_6x8, true);
     }
     else
     {
@@ -130,11 +136,13 @@ void Screen::DrawStatus(int      mix_pct,
                  selected_param == 1 ? "> " : "  ", fbk_pct, MasterStr(master_fbk));
         display.WriteString(line, Font_6x8, true);
         display.SetCursor(0, 34);
-        snprintf(line, sizeof(line), "%sDelay: %lu ms%s",
-                 selected_param == 2 ? "> " : "  ", (unsigned long)delay_ms, MasterStr(master_delay));
+        snprintf(line, sizeof(line), "%sTempo: %3d BPM%s",
+                 selected_param == 2 ? "> " : "  ", bpm, MasterStr(master_bpm));
         display.WriteString(line, Font_6x8, true);
         display.SetCursor(0, 44);
-        display.WriteString("Hold Enc1/Enc2: assign Pot1/Pot2", Font_6x8, true);
+        snprintf(line, sizeof(line), "%sDiv: 1/%d%s",
+                 selected_param == 3 ? "> " : "  ", division, MasterStr(master_division));
+        display.WriteString(line, Font_6x8, true);
     }
     display.Update();
 }

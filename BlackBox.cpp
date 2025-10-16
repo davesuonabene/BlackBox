@@ -40,8 +40,9 @@ int main(void)
     {
         uint32_t now = System::GetNow();
 
-        uint32_t delay_ms = static_cast<uint32_t>(g_proc.current_delay / g_hw.sample_rate * 1000.f);
-        if(delay_ms > 0 && (now - last_blink_time > delay_ms))
+        // LED blinks at BPM rate, not division rate
+        uint32_t bpm_delay_ms = static_cast<uint32_t>(60000.0f / g_proc.bpm);
+        if(bpm_delay_ms > 0 && (now - last_blink_time > bpm_delay_ms))
         {
             last_blink_time = now;
             g_hw.tempo_led.Set(1.0f);
@@ -67,10 +68,13 @@ int main(void)
             g_screen.DrawStatus(mix_pct,
                                 fbk_pct,
                                 static_cast<uint32_t>(g_proc.current_delay / g_hw.sample_rate * 1000.f),
+                                static_cast<int>(g_proc.bpm + 0.5f),
+                                g_proc.division,
                                 g_proc.selected_param,
                                 g_proc.master_of_param[g_proc.PARAM_MIX],
                                 g_proc.master_of_param[g_proc.PARAM_FEEDBACK],
-                                g_proc.master_of_param[g_proc.PARAM_DELAY],
+                                g_proc.master_of_param[g_proc.PARAM_BPM],
+                                g_proc.master_of_param[g_proc.PARAM_DIVISION],
                                 true);
         }
 

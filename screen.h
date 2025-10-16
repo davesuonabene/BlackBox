@@ -18,10 +18,13 @@ struct Screen
     void DrawStatus(int      mix_pct,
                     int      fbk_pct,
                     uint32_t delay_ms,
+                    int      bpm,
+                    int      division,
                     int      selected_param,
                     int      master_mix,
                     int      master_fbk,
-                    int      master_delay,
+                    int      master_bpm,
+                    int      master_division,
                     bool     rotated180);
 };
 
