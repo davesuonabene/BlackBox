@@ -1,3 +1,4 @@
+/* 
 #include "hw.h"
 
 void Hardware::Init()
@@ -24,5 +25,20 @@ void Hardware::Init()
 
     tempo_led.Init(seed.GetPin(21), false);
 }
+*/
+
+#include "hw.h"
+
+void Hardware::Init()
+{
+    seed.Init();
+    seed.SetAudioBlockSize(4);
+    sample_rate = seed.AudioSampleRate();
+
+    // Single encoder on pins 0/1/2
+    encoder.Init(seed.GetPin(1), seed.GetPin(28), seed.GetPin(2), seed.AudioCallbackRate());
+}
+
+
 
 

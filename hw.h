@@ -7,6 +7,27 @@ using namespace daisysp;
 
 struct Hardware
 {
+    DaisySeed seed;
+    Encoder   encoder; // single encoder on pins 0/1/2
+
+    float sample_rate;
+
+    void Init();
+};
+
+
+
+
+/*
+#pragma once
+#include "daisy_seed.h"
+#include "daisysp.h"
+
+using namespace daisy;
+using namespace daisysp;
+
+struct Hardware
+{
     DaisySeed    seed;
     AnalogControl feedback_knob;
     AnalogControl mix_knob;
@@ -21,5 +42,5 @@ struct Hardware
 
     void Init();
 };
-
+*/
 
