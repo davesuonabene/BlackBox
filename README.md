@@ -1,22 +1,17 @@
 # BlackBox
 
-## Author
-
-Ben Sergentanis
+A Software implementation made for easy developement on the Daisy Seed board. 
+*by Dave Souna Bene.*
 
 ## Description
-BlackBox is a pedal project for the Daisy Seed platform, providing a solid hardware foundation for further audio and control development. This base code sets up all hardware components and pin assignments for easy expansion.
 
-## Hardware Components
-| Component   | Quantity | Description                |
-|------------|----------|----------------------------|
-| Button     | 3        | Momentary footswitches     |
-| Encoder    | 2        | Rotary encoders (with clk) |
-| Potentiometer | 2     | Analog control knobs       |
-| LED        | 3        | Status indicators          |
+BlackBox is a software foundation and library for the Daisy Seed platform, providing a solid foundation for further development of synths and effects.
 
 ## Pin Assignments
-Pin assignments are placeholders and should be updated to match your hardware wiring.
+
+Single Encoder on Pins 1, 2 and 3 (switch)
+
+OLED I2C Screen on Pins 12, 13
 
 ## Getting Started
 - Edit `BlackBox.cpp` to add your own audio processing or control logic.
