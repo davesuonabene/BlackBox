@@ -1,12 +1,15 @@
 #include "screen.h"
-#include "hid/disp/oled_display.h"
 #include <cstdio>
+#include <string.h> // For strncat
+#include <math.h>   // For log2f, fabsf
+#include "processing.h" 
 
 using namespace daisy;
 using daisy::OledDisplay;
 
 static daisy::OledDisplay<daisy::SSD130xI2c128x64Driver> display;
 
+// Helper function from original file to draw rotated char
 static void DrawCharRot180(OledDisplay<OledDriver> &disp,
                            int                      x,
                            int                      y,
@@ -33,10 +36,11 @@ static void DrawCharRot180(OledDisplay<OledDriver> &disp,
     }
 }
 
+// Helper function from original file to draw rotated string
 static void DrawStringRot180(OledDisplay<OledDriver> &disp,
                              int                      x,
                              int                      y,
-                             const char *             str,
+                             const char * str,
                              const FontDef &          font,
                              bool                     on)
 {
@@ -48,6 +52,7 @@ static void DrawStringRot180(OledDisplay<OledDriver> &disp,
         ++str;
     }
 }
+
 
 void Screen::Init(DaisySeed &seed)
 {
@@ -64,6 +69,7 @@ void Screen::Init(DaisySeed &seed)
         = seed.GetPin(11);
     disp_cfg.driver_config.transport_config.i2c_address = 0x3C;
     display.Init(disp_cfg);
+    
     display.Fill(false);
     display.Update();
 }
@@ -74,19 +80,9 @@ void Screen::Blink(uint32_t now)
     blink_start  = now;
 }
 
-void Screen::DrawStatus(int      mix_pct,
-                        int      fbk_pct,
-                        uint32_t delay_ms,
-                        int      bpm,
-                        int      division,
-                        int      selected_param,
-                        int      master_mix,
-                        int      master_fbk,
-                        int      master_bpm,
-                        int      master_division,
-                        bool     rotated180)
+void Screen::DrawStatus(Processing &proc)
 {
-    if(blink_active && (System::GetNow() - blink_start) < 120)
+    if(blink_active && (System::GetNow() - blink_start) < 100)
     {
         display.Fill(true);
         display.Update();
@@ -96,55 +92,75 @@ void Screen::DrawStatus(int      mix_pct,
         blink_active = false;
 
     display.Fill(false);
-    char line[48];
-    auto MasterStr = [](int m) -> const char*
+    char line[32];
+
+    const int y_top = 10;
+    const int y_spacing = 10;
+    const int x_left = 0;
+    const int max_lines = 5; 
+
+    for(int line_idx = 0; line_idx < max_lines; line_idx++)
     {
-        switch(m)
+        int param_idx = proc.view_top_param + line_idx;
+
+        if(param_idx >= proc.PARAM_COUNT)
+            break; 
+
+        const char *name = proc.param_names[param_idx];
+        float       val  = proc.params[param_idx];
+        
+        const char *prefix = "  ";
+        if(param_idx == proc.selected_param)
         {
-            case 1: return " (P1)";
-            case 2: return " (P2)";
-            default: return "";
+            prefix = (proc.ui_state == proc.STATE_EDIT) ? "[ " : "> ";
         }
-    };
-    if(rotated180)
-    {
-        //DrawStringRot180(display, 0, 0, "BlackBox", Font_7x10, true);
-        snprintf(line, sizeof(line), "%sMix: %3d%%%s",
-                 selected_param == 0 ? "> " : "  ", mix_pct, MasterStr(master_mix));
-        DrawStringRot180(display, 0, 14, line, Font_7x10, true);
-        snprintf(line, sizeof(line), "%sFbk: %3d%% %s",
-                 selected_param == 1 ? "> " : "  ", fbk_pct, MasterStr(master_fbk));
-        DrawStringRot180(display, 0, 24, line, Font_7x10, true);
-        snprintf(line, sizeof(line), "%sBPM: %3d BPM%s",
-                 selected_param == 2 ? "> " : "  ", bpm, MasterStr(master_bpm));
-        DrawStringRot180(display, 0, 34, line, Font_7x10, true);
-        snprintf(line, sizeof(line), "%sDiv: 1/%d%s",
-                 selected_param == 3 ? "> " : "  ", division, MasterStr(master_division));
-        DrawStringRot180(display, 0, 44, line, Font_7x10, true);
-        //DrawStringRot180(display, 0, 44, "Hold Enc1/Enc2: assign Pot1/Pot2", Font_6x8, true);
+        
+        line[0] = '\0'; 
+
+        switch(param_idx)
+        {
+            // 0-200% params (stored 0-1)
+            case proc.PARAM_PRE_GAIN:
+            case proc.PARAM_POST_GAIN:
+                snprintf(line, sizeof(line), "%s%s: %d%%", prefix, name, (int)(val * 200.f));
+                break;
+            // 0-100% params (stored 0-1)
+            case proc.PARAM_SEND:
+            case proc.PARAM_FEEDBACK:
+            case proc.PARAM_MIX:
+            case proc.PARAM_STEREO:
+                snprintf(line, sizeof(line), "%s%s: %d%%", prefix, name, (int)(val * 100.f));
+                break;
+            case proc.PARAM_BPM:
+                snprintf(line, sizeof(line), "%s%s: %d", prefix, name, (int)val);
+                break;
+            case proc.PARAM_DIVISION:
+                snprintf(line, sizeof(line), "%s%s: 1/%d", prefix, name, (int)val);
+                break;
+            case proc.PARAM_PITCH:
+            {
+                float semitones = 12.0f * log2f(val);
+                int int_part    = (int)semitones;
+                int frac_part   = (int)(fabsf(semitones * 10.0f)) % 10;
+                snprintf(line, sizeof(line), "%s%s: %+d.%dst", prefix, name, int_part, frac_part);
+                break;
+            }
+            case proc.PARAM_GRAIN_SIZE:
+                snprintf(line, sizeof(line), "%s%s: %dms", prefix, name, (int)(val * 1000.f));
+                break;
+            case proc.PARAM_GRAIN_DENSITY:
+                snprintf(line, sizeof(line), "%s%s: %dHz", prefix, name, (int)val);
+                break;
+        }
+
+        if(param_idx == proc.selected_param && proc.ui_state == proc.STATE_EDIT)
+        {
+            strncat(line, " ]", sizeof(line) - strlen(line) - 1);
+        }
+
+        int y_pos = y_top + line_idx * y_spacing;
+        DrawStringRot180(display, x_left, y_pos, line, Font_7x10, true);
     }
-    else
-    {
-        display.SetCursor(0, 0);
-        display.WriteString("BlackBox", Font_7x10, true);
-        display.SetCursor(0, 14);
-        snprintf(line, sizeof(line), "%sMix: %3d%%%s",
-                 selected_param == 0 ? "> " : "  ", mix_pct, MasterStr(master_mix));
-        display.WriteString(line, Font_6x8, true);
-        display.SetCursor(0, 24);
-        snprintf(line, sizeof(line), "%sFbk: %3d%% %s",
-                 selected_param == 1 ? "> " : "  ", fbk_pct, MasterStr(master_fbk));
-        display.WriteString(line, Font_6x8, true);
-        display.SetCursor(0, 34);
-        snprintf(line, sizeof(line), "%sTempo: %3d BPM%s",
-                 selected_param == 2 ? "> " : "  ", bpm, MasterStr(master_bpm));
-        display.WriteString(line, Font_6x8, true);
-        display.SetCursor(0, 44);
-        snprintf(line, sizeof(line), "%sDiv: 1/%d%s",
-                 selected_param == 3 ? "> " : "  ", division, MasterStr(master_division));
-        display.WriteString(line, Font_6x8, true);
-    }
+    
     display.Update();
 }
-
-
