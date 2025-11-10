@@ -16,7 +16,6 @@ void AudioCallback(AudioHandle::InputBuffer  in,
                    AudioHandle::OutputBuffer out,
                    size_t                    size)
 {
-    // Revert controls polling to the audio callback
     g_proc.Controls(g_hw);
 
     for(size_t i = 0; i < size; i++)
@@ -40,14 +39,7 @@ int main(void)
     {
         uint32_t now = System::GetNow();
 
-        // Controls are no longer handled here
-
-        // Screen blink on click
-        if(g_proc.enc_click_pending)
-        {
-            g_proc.enc_click_pending = false;
-            g_screen.Blink(now);
-        }
+        // Removed the check for enc_click_pending
 
         // UI update
         if(now - last_ui_update >= ui_interval_ms)
