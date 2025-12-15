@@ -63,6 +63,19 @@ void Processing::Init(Hardware &hw)
 
 void Processing::Controls(Hardware &hw)
 {
+    // --- Potentiometer Logic (D16 / A1) ---
+    hw.pot.Process();
+    // Directly bind the pot to the Mix parameter
+    params[PARAM_MIX] = hw.pot.Value();
+
+    // --- Button Logic (D18) ---
+    hw.button.Debounce();
+    if(hw.button.RisingEdge())
+    {
+        trigger_blink = true;
+    }
+
+    // --- Encoder Logic ---
     hw.encoder.Debounce();
     int32_t inc = hw.encoder.Increment();
 
@@ -170,7 +183,9 @@ void Processing::Controls(Hardware &hw)
                     break;
                 case PARAM_SEND:
                 case PARAM_FEEDBACK:
-                case PARAM_MIX:
+                // Mix is controlled by pot now, but we leave this here
+                // in case the pot isn't connected or to allow fighting it :)
+                case PARAM_MIX: 
                 case PARAM_STEREO:
                     params[param_id] = fclamp(val + delta, 0.0f, 1.0f);
                     break;

@@ -9,6 +9,8 @@ struct Hardware
 {
     DaisySeed seed;
     Encoder   encoder;
+    Switch    button;
+    AnalogControl pot;
 
     float     sample_rate;
 

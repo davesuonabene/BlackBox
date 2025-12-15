@@ -58,7 +58,6 @@ struct Processing
     // Nested struct for Grain
     struct Grain
     {
-        // ... (Grain struct remains identical) ...
         inline float TriEnv(float pos)
         {
             if(pos < 0.5f) return pos * 2.0f; 
@@ -98,7 +97,6 @@ struct Processing
     };
     struct Rand
     {
-        // ... (Rand struct remains identical) ...
         uint32_t seed_ = 1;
         float Process()
         {
@@ -145,6 +143,9 @@ struct Processing
     const uint32_t  kHoldTimeMs = 500; // 500ms for a "hold"
     bool            enc_is_holding = false;
     uint32_t        enc_hold_start = 0;
+
+    // --- Communication Flags ---
+    bool            trigger_blink = false;
 
 
     void Init(Hardware &hw);

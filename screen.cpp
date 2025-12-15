@@ -1,7 +1,7 @@
 #include "screen.h"
 #include <cstdio>
-#include <string.h> // For strncat
-#include <math.h>   // For log2f, fabsf
+#include <string.h> 
+#include <math.h>   
 #include "processing.h" 
 
 using namespace daisy;
@@ -16,7 +16,6 @@ const int kLeftColX = 51;
 const int kLeftColWidth = 77;
 
 // --- LOW-LEVEL DRAWING HELPERS ---
-// ... (DrawCharRot180, DrawStringRot180, DrawHighlightBox, GetStringWidth) ...
 static void DrawCharRot180(OledDisplay<OledDriver> &disp,
                            int                      x,
                            int                      y,
@@ -124,15 +123,44 @@ void Screen::Init(DaisySeed &seed)
     display.Update();
 }
 
+void Screen::Blink(uint32_t now)
+{
+    blink_active = true;
+    blink_start = now;
+}
+
 void Screen::DrawStatus(Processing &proc)
 {
+    // Check for external blink trigger
+    if (proc.trigger_blink)
+    {
+        Blink(daisy::System::GetNow());
+        proc.trigger_blink = false; // consume trigger
+    }
+
     display.Fill(false);
+
+    // Handle Blink Visuals
+    if (blink_active)
+    {
+        if (daisy::System::GetNow() - blink_start < 100) // 100ms blink duration
+        {
+            display.Fill(true); // Fill screen white
+            display.Update();
+            return; // Exit early, don't draw text
+        }
+        else
+        {
+            blink_active = false;
+        }
+    }
+
     char label_str[32];
     char value_str[16];
 
     const int y_top = 10;
     const int y_spacing = 10;
-    const int max_lines = 5; 
+    const int max_lines = 4; // Decreased to make space for Debug Text
 
     for(int line_idx = 0; line_idx < max_lines; line_idx++)
     {
@@ -220,5 +248,11 @@ void Screen::DrawStatus(Processing &proc)
         DrawStringRot180(display, label_x, y_pos, label_str, Font_7x10, !is_editing);
     }
     
+    // --- DEBUG: Print Pot/Mix Value at the bottom ---
+    char debug_str[32];
+    snprintf(debug_str, sizeof(debug_str), "Mix/Pot: %.3f", proc.params[PARAM_MIX]);
+    // Draw near bottom (Y=53), Font Height=10
+    DrawStringRot180(display, 0, 53, debug_str, Font_7x10, true);
+
     display.Update();
 }
