@@ -16,7 +16,9 @@ void Hardware::Init()
     seed.adc.Start();
 
     // Bind AnalogControl to the ADC buffer
-    pot.Init(seed.adc.GetPtr(0), seed.AudioCallbackRate());
+    // Syntax: Init(adcptr, sr, flip, invert, slew_seconds)
+    // Setting 'flip' to true inverts the 0.0-1.0 range.
+    pot.Init(seed.adc.GetPtr(0), seed.AudioCallbackRate(), true);
 
     // --- Controls ---
     encoder.Init(seed.GetPin(1), seed.GetPin(28), seed.GetPin(2), seed.AudioCallbackRate());
