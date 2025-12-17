@@ -20,6 +20,7 @@ enum Param
     PARAM_GRAIN_SIZE,
     PARAM_GRAIN_DENSITY,
     PARAM_STEREO,
+    PARAM_MAP_AMT, 
     PARAM_COUNT
 };
 
@@ -27,9 +28,9 @@ enum Param
 
 enum MenuItemType
 {
-    TYPE_PARAM,           // Editable parameter
-    TYPE_SUBMENU,         // Enters a submenu (e.g., "Advanced...")
-    TYPE_PARAM_SUBMENU,   // Editable param that ALSO enters a submenu on hold
+    TYPE_PARAM,           // Editable parameter (Hold -> Generic Edit)
+    TYPE_SUBMENU,         // Enters a submenu
+    TYPE_PARAM_SUBMENU,   // Editable param (Hold -> Specific Edit)
     TYPE_BACK             // Goes up one menu level
 };
 
@@ -38,24 +39,26 @@ struct MenuItem
     const char* name;
     MenuItemType type;
 
-    // We no longer use a union, so an item can have both
-    int param_id;             // For TYPE_PARAM and TYPE_PARAM_SUBMENU
-    const MenuItem* submenu;  // For TYPE_SUBMENU and TYPE_PARAM_SUBMENU
-
-    int num_children; // For submenus
+    int param_id;             
+    const MenuItem* submenu;  
+    int num_children; 
 };
 
-// --- Menu Tree Declaration ---
+// --- Menu Tree Declarations ---
 extern const MenuItem kMenuMain[];
 extern const int kMenuMainSize;
-extern const MenuItem kMenuDivisions[];
-extern const int kMenuDivisionsSize;
+extern const MenuItem kMenuBpmEdit[];
+extern const int kMenuBpmEditSize;
+extern const MenuItem kMenuPostEdit[];
+extern const int kMenuPostEditSize;
+extern const MenuItem kMenuGenericEdit[];
+extern const int kMenuGenericEditSize;
 
 
 // --- Processing Struct ---
 struct Processing
 {
-    // Nested struct for Grain
+    // Nested struct for Grain (Unchanged)
     struct Grain
     {
         inline float TriEnv(float pos)
@@ -105,11 +108,10 @@ struct Processing
         }
     };
 
-    // --- New UI State ---
     enum UiState
     {
-        STATE_MENU_NAV,   // Scrolling the menu
-        STATE_PARAM_EDIT  // Editing a parameter value
+        STATE_MENU_NAV,   
+        STATE_PARAM_EDIT  
     };
 
     // Buffer
@@ -125,28 +127,33 @@ struct Processing
     uint32_t        grain_trig_interval_l = 2400; 
     uint32_t        grain_trig_interval_r = 2400; 
 
-    // State
-    float           params[PARAM_COUNT];
+    // --- DSP & Mapping State ---
+    float           params[PARAM_COUNT];           // Base values
+    float           knob_map_amounts[PARAM_COUNT]; // Mapping %
+    float           effective_params[PARAM_COUNT]; // Final values
+    
     int             division_idx = 0; 
     const int       division_vals[4] = {1, 2, 4, 8}; 
     float           sample_rate_ = 48000.0f;
     Rand            rand_;
     
-    // --- New UI State Variables ---
+    // --- UI State Variables ---
     UiState         ui_state = STATE_MENU_NAV;
     const MenuItem* current_menu = kMenuMain; 
     int             current_menu_size = kMenuMainSize;
     int             selected_item_idx = 0;
     int             view_top_item_idx = 0; 
+
+    int             edit_param_target = 0; 
+    char            parent_menu_name[16]; // For Footer display
     
     // --- Encoder Hold State ---
-    const uint32_t  kHoldTimeMs = 500; // 500ms for a "hold"
+    const uint32_t  kHoldTimeMs = 500; 
     bool            enc_is_holding = false;
     uint32_t        enc_hold_start = 0;
 
     // --- Communication Flags ---
     bool            trigger_blink = false;
-
 
     void Init(Hardware &hw);
     void Controls(Hardware &hw);
@@ -154,6 +161,5 @@ struct Processing
     void UpdateBufferLen();
     void UpdateGrainParams();
     
-    // --- Helper to get current menu item ---
     const MenuItem& GetSelectedItem() { return current_menu[selected_item_idx]; }
 };

@@ -75,29 +75,92 @@ static int GetStringWidth(const char *str, const FontDef &font)
     return w;
 }
 
+// --- HELPER: Normalize Parameter Value ---
+static float GetNormVal(int param_id, float val, int division_idx = 0)
+{
+    float norm = 0.0f;
+    switch(param_id)
+    {
+        case PARAM_PRE_GAIN:
+        case PARAM_POST_GAIN:
+        case PARAM_SEND:
+        case PARAM_FEEDBACK:
+        case PARAM_MIX:
+        case PARAM_STEREO:
+            norm = val; 
+            break;
+        case PARAM_BPM:
+            norm = (val - 20.f) / (300.f - 20.f); 
+            break;
+        case PARAM_DIVISION:
+            norm = (float)division_idx / 3.0f; 
+            break;
+        case PARAM_PITCH:
+        {
+            float semitones = 12.0f * log2f(val);
+            norm = (semitones + 24.f) / 48.f; 
+            break;
+        }
+        case PARAM_GRAIN_SIZE:
+            norm = (val - 0.002f) / (0.5f - 0.002f); 
+            break;
+        case PARAM_GRAIN_DENSITY:
+            norm = (val - 0.5f) / (50.f - 0.5f); 
+            break;
+    }
+    if(norm < 0.0f) norm = 0.0f;
+    if(norm > 1.0f) norm = 1.0f;
+    return norm;
+}
+
 
 // --- STYLING FUNCTIONS ---
 
-static void DrawValueBar(int y, float norm_val, const char* text, bool selected)
+static void DrawValueBar(int y, float norm_base, float norm_eff, const char* text, bool selected)
 {
     const FontDef& font = Font_7x10;
     int bar_y = y - 1;
     int bar_height = font.FontHeight + 2;
-    int bar_width = (int)(norm_val * (float)kRightColWidth);
-    if(bar_width < 0) bar_width = 0;
-    if(bar_width > kRightColWidth) bar_width = kRightColWidth;
-
-    int rx_fill = display.Width() - 1 - (kRightColX + bar_width - 1);
-    int ry_fill = display.Height() - 1 - (bar_y + bar_height - 1);
-    display.DrawRect(rx_fill, ry_fill, rx_fill + bar_width - 1, ry_fill + bar_height - 1, true, true);
-
-    if (bar_width < kRightColWidth)
-    {
-        int rx_empty = display.Width() - 1 - (kRightColX + kRightColWidth - 1);
-        int ry_empty = display.Height() - 1 - (bar_y + bar_height - 1);
-        display.DrawRect(rx_empty, ry_empty, rx_fill, ry_empty + bar_height - 1, true, false);
-    }
     
+    int w_base = (int)(norm_base * (float)kRightColWidth);
+    int w_eff  = (int)(norm_eff  * (float)kRightColWidth);
+    
+    if(w_base > kRightColWidth) w_base = kRightColWidth;
+    if(w_eff > kRightColWidth)  w_eff  = kRightColWidth;
+
+    int w_min = (w_base < w_eff) ? w_base : w_eff;
+    int w_max = (w_base > w_eff) ? w_base : w_eff;
+    int gap = 2; 
+
+    // Helper to draw solid segment
+    auto DrawSolidSegment = [&](int start_w, int end_w) {
+        if (end_w <= start_w) return;
+        int rx_start = display.Width() - 1 - (kRightColX + end_w - 1);
+        int rx_end   = display.Width() - 1 - (kRightColX + start_w);
+        int ry_start = display.Height() - 1 - (bar_y + bar_height - 1);
+        int ry_end   = display.Height() - 1 - (bar_y);
+        display.DrawRect(rx_start, ry_start, rx_end, ry_end, true, true);
+    };
+
+    // 1. Draw "Safe" part (Solid)
+    DrawSolidSegment(0, w_min);
+
+    // 2. Draw "Modulated" part (Hatched)
+    if (w_max > w_min + gap)
+    {
+        int ry_start = display.Height() - 1 - (bar_y + bar_height - 1);
+        int ry_end   = display.Height() - 1 - (bar_y);
+        
+        for (int i = w_min + gap; i < w_max; i++)
+        {
+            if (i % 3 == 0) 
+            {
+                int rx = display.Width() - 1 - (kRightColX + i);
+                display.DrawLine(rx, ry_start, rx, ry_end, true);
+            }
+        }
+    }
+
     DrawStringRot180(display, kRightColX + 2, y, text, font, false);
 }
 
@@ -131,23 +194,21 @@ void Screen::Blink(uint32_t now)
 
 void Screen::DrawStatus(Processing &proc)
 {
-    // Check for external blink trigger
     if (proc.trigger_blink)
     {
         Blink(daisy::System::GetNow());
-        proc.trigger_blink = false; // consume trigger
+        proc.trigger_blink = false; 
     }
 
     display.Fill(false);
 
-    // Handle Blink Visuals
     if (blink_active)
     {
-        if (daisy::System::GetNow() - blink_start < 100) // 100ms blink duration
+        if (daisy::System::GetNow() - blink_start < 100) 
         {
-            display.Fill(true); // Fill screen white
+            display.Fill(true); 
             display.Update();
-            return; // Exit early, don't draw text
+            return; 
         }
         else
         {
@@ -158,9 +219,24 @@ void Screen::DrawStatus(Processing &proc)
     char label_str[32];
     char value_str[16];
 
-    const int y_top = 10;
-    const int y_spacing = 10;
-    const int max_lines = 4; // Decreased to make space for Debug Text
+    // Determine Layout
+    bool is_main_menu = (proc.current_menu == kMenuMain);
+    
+    // Header for Secondary Menu
+    if (!is_main_menu)
+    {
+        // Draw Header Title at Y=0
+        DrawStringRot180(display, 0, 0, proc.parent_menu_name, Font_7x10, true);
+        // Draw Header Separator at Y=10
+        int line_ry = display.Height() - 1 - 10;
+        display.DrawLine(0, line_ry, 127, line_ry, true);
+    }
+    
+    // List start Y
+    // Main: 0 (or centered?). Let's keep existing logic -> starts at 0.
+    // Secondary: 12 (below header line)
+    int y_list_start = is_main_menu ? 0 : 12;
+    int max_lines = 4;
 
     for(int line_idx = 0; line_idx < max_lines; line_idx++)
     {
@@ -174,67 +250,81 @@ void Screen::DrawStatus(Processing &proc)
         bool is_selected = (item_idx == proc.selected_item_idx);
         bool is_editing = (is_selected && proc.ui_state == proc.STATE_PARAM_EDIT);
 
-        snprintf(label_str, sizeof(label_str), "%s", item.name);
+        // --- Y Position Calculation ---
+        int y_pos = y_list_start + line_idx * 10;
         
-        value_str[0] = '\0';
-        float norm_val = 0.0f;
+        // Add extra gap after "Back" button (Index 1) in secondary menus
+        // If the item we are drawing is after index 1, shift it down.
+        if (!is_main_menu && item_idx > 1) 
+        {
+            y_pos += 5; 
+        }
 
-        // --- UPDATE: Check for both PARAM and PARAM_SUBMENU ---
+        snprintf(label_str, sizeof(label_str), "%s", item.name);
+        value_str[0] = '\0';
+        float norm_base = 0.0f;
+        float norm_eff  = 0.0f;
+
         if (item.type == TYPE_PARAM || item.type == TYPE_PARAM_SUBMENU)
         {
-            float val = proc.params[item.param_id];
-            
-            switch(item.param_id)
+            if (item.param_id == PARAM_MAP_AMT)
             {
-                case PARAM_PRE_GAIN:
-                case PARAM_POST_GAIN:
-                    snprintf(value_str, sizeof(value_str), "%d%%", (int)(val * 200.f));
-                    norm_val = val; 
-                    break;
-                case PARAM_SEND:
-                case PARAM_FEEDBACK:
-                case PARAM_MIX:
-                case PARAM_STEREO:
-                    snprintf(value_str, sizeof(value_str), "%d%%", (int)(val * 100.f));
-                    norm_val = val; 
-                    break;
-                case PARAM_BPM:
-                    snprintf(value_str, sizeof(value_str), "%d", (int)val);
-                    norm_val = (val - 20.f) / (300.f - 20.f); 
-                    break;
-                case PARAM_DIVISION:
-                    snprintf(value_str, sizeof(value_str), "1/%d", (int)val);
-                    norm_val = (float)proc.division_idx / 3.0f; 
-                    break;
-                case PARAM_PITCH:
+                float map_val = proc.knob_map_amounts[proc.edit_param_target];
+                snprintf(value_str, sizeof(value_str), "%d%%", (int)(map_val * 100.0f));
+                norm_base = (map_val + 1.0f) * 0.5f; 
+                norm_eff = norm_base; 
+            }
+            else
+            {
+                float val_base = proc.params[item.param_id];
+                float val_eff  = proc.effective_params[item.param_id];
+
+                switch(item.param_id)
                 {
-                    float semitones = 12.0f * log2f(val);
-                    int int_part    = (int)semitones;
-                    int frac_part   = (int)(fabsf(semitones * 10.0f)) % 10;
-                    snprintf(value_str, sizeof(value_str), "%+d.%dst", int_part, frac_part);
-                    norm_val = (semitones + 24.f) / 48.f; 
-                    break;
+                    case PARAM_PRE_GAIN:
+                    case PARAM_POST_GAIN:
+                        snprintf(value_str, sizeof(value_str), "%d%%", (int)(val_base * 200.f));
+                        break;
+                    case PARAM_SEND:
+                    case PARAM_FEEDBACK:
+                    case PARAM_MIX:
+                    case PARAM_STEREO:
+                        snprintf(value_str, sizeof(value_str), "%d%%", (int)(val_base * 100.f));
+                        break;
+                    case PARAM_BPM:
+                        snprintf(value_str, sizeof(value_str), "%d", (int)val_base);
+                        break;
+                    case PARAM_DIVISION:
+                        snprintf(value_str, sizeof(value_str), "1/%d", (int)val_base);
+                        break;
+                    case PARAM_PITCH:
+                    {
+                        float semitones = 12.0f * log2f(val_base);
+                        int int_part    = (int)semitones;
+                        int frac_part   = (int)(fabsf(semitones * 10.0f)) % 10;
+                        snprintf(value_str, sizeof(value_str), "%+d.%dst", int_part, frac_part);
+                        break;
+                    }
+                    case PARAM_GRAIN_SIZE:
+                        snprintf(value_str, sizeof(value_str), "%dms", (int)(val_base * 1000.f));
+                        break;
+                    case PARAM_GRAIN_DENSITY:
+                        snprintf(value_str, sizeof(value_str), "%dHz", (int)val_base);
+                        break;
                 }
-                case PARAM_GRAIN_SIZE:
-                    snprintf(value_str, sizeof(value_str), "%dms", (int)(val * 1000.f));
-                    norm_val = (val - 0.002f) / (0.5f - 0.002f); 
-                    break;
-                case PARAM_GRAIN_DENSITY:
-                    snprintf(value_str, sizeof(value_str), "%dHz", (int)val);
-                    norm_val = (val - 0.5f) / (50.f - 0.5f); 
-                    break;
+
+                norm_base = GetNormVal(item.param_id, val_base, proc.division_idx);
+                norm_eff  = GetNormVal(item.param_id, val_eff,  proc.division_idx);
             }
         }
 
-        int y_pos = y_top + line_idx * y_spacing;
-        
-        // --- Draw Right Column (Value) ---
+        // Draw Value Bar
         if (item.type == TYPE_PARAM || item.type == TYPE_PARAM_SUBMENU)
         {
-            DrawValueBar(y_pos, norm_val, value_str, is_selected);
+            DrawValueBar(y_pos, norm_base, norm_eff, value_str, is_selected);
         }
         
-        // --- Draw Left Column (Label) ---
+        // Draw Label
         int label_width = GetStringWidth(label_str, Font_7x10);
         int label_x = (kLeftColX + kLeftColWidth) - label_width - 2; 
         if (label_x < kLeftColX) label_x = kLeftColX; 
@@ -246,13 +336,28 @@ void Screen::DrawStatus(Processing &proc)
         }
         
         DrawStringRot180(display, label_x, y_pos, label_str, Font_7x10, !is_editing);
+        
+        // --- DRAW LIST SEPARATOR ---
+        // If this is the "Back" button (index 1) in a secondary menu, draw line below it
+        if (!is_main_menu && item_idx == 1)
+        {
+            // The line is in the middle of the 5px gap
+            // y_pos of Back button is around 22.
+            // Next item starts at y_pos + 10 + 5.
+            // Line should be at y_pos + 10 + 2.
+            int line_y_screen = y_pos + 12;
+            int ry = display.Height() - 1 - line_y_screen;
+            display.DrawLine(0, ry, 127, ry, true);
+        }
     }
     
-    // --- DEBUG: Print Pot/Mix Value at the bottom ---
-    char debug_str[32];
-    snprintf(debug_str, sizeof(debug_str), "Mix/Pot: %.3f", proc.params[PARAM_MIX]);
-    // Draw near bottom (Y=53), Font Height=10
-    DrawStringRot180(display, 0, 53, debug_str, Font_7x10, true);
+    // --- Footer ---
+    // Only show "alpha version" on Main Menu.
+    // Secondary menus have the Title Header at top.
+    if (is_main_menu)
+    {
+        DrawStringRot180(display, 0, 53, "alpha version", Font_7x10, true);
+    }
 
     display.Update();
 }
