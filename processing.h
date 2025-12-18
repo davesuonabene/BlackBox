@@ -6,7 +6,7 @@
 using namespace daisy;
 using namespace daisysp;
 
-// --- Parameter Enum (Global) ---
+// --- Parameter Enum ---
 enum Param
 {
     PARAM_PRE_GAIN,
@@ -143,8 +143,8 @@ struct Processing
     bool            enc_is_holding = false;
     uint32_t        enc_hold_start = 0;
 
-    // --- Button State Machine (Zero Latency) ---
-    uint32_t        last_press_time = 0; 
+    // --- Button Logic Variables ---
+    uint32_t        last_looper_toggle = 0; 
     bool            long_press_active = false; 
     bool            trigger_blink = false;
 

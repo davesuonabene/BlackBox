@@ -9,31 +9,34 @@ using daisy::OledDisplay;
 
 static daisy::OledDisplay<daisy::SSD130xI2c128x64Driver> display;
 
-// --- CONSTANTS FOR LAYOUT ---
 const int kSelectorColX = 0;
 const int kTextColX     = 5;
 const int kTextColWidth = 55; 
 const int kBarColX      = 64; 
 const int kBarColWidth  = 64; 
 
-// --- LOW-LEVEL DRAWING HELPERS ---
 static void DrawCharRot180(OledDisplay<OledDriver> &disp, int x, int y, char ch, const FontDef &font, bool on) {
-    if(ch < 32 || ch > 126) return;
+    if(ch < 32 || ch > 126) { return; }
     for(int i = 0; i < (int)font.FontHeight; i++) {
         uint32_t rowBits = font.data[(ch - 32) * font.FontHeight + i];
         for(int j = 0; j < (int)font.FontWidth; j++) {
             bool bit_on = (rowBits << j) & 0x8000;
             int  rx     = (int)disp.Width() - 1 - (x + j);
             int  ry     = (int)disp.Height() - 1 - (y + i);
-            if(rx >= 0 && ry >= 0 && rx < (int)disp.Width() && ry < (int)disp.Height())
+            if(rx >= 0 && ry >= 0 && rx < (int)disp.Width() && ry < (int)disp.Height()) {
                 disp.DrawPixel((uint_fast8_t)rx, (uint_fast8_t)ry, bit_on ? on : !on);
+            }
         }
     }
 }
 
 static void DrawStringRot180(OledDisplay<OledDriver> &disp, int x, int y, const char * str, const FontDef &font, bool on) {
     int cx = x;
-    while(*str) { DrawCharRot180(disp, cx, y, *str, font, on); cx += font.FontWidth; ++str; }
+    while(*str) { 
+        DrawCharRot180(disp, cx, y, *str, font, on); 
+        cx += font.FontWidth; 
+        ++str; 
+    }
 }
 
 static void DrawSelectionIndicator(int y, bool engaged) {
@@ -41,7 +44,7 @@ static void DrawSelectionIndicator(int y, bool engaged) {
     int ry_start = display.Height() - 1 - (y + 9);
     int ry_end = display.Height() - 1 - y;
     display.DrawLine(rx, ry_start, rx, ry_end, true);
-    if (engaged) display.DrawLine(rx + 2, ry_start, rx + 2, ry_end, true);
+    if (engaged) { display.DrawLine(rx + 2, ry_start, rx + 2, ry_end, true); }
 }
 
 static void DrawHighlightBox(OledDisplay<OledDriver> &disp, int x, int y, int_fast16_t w, int_fast16_t h, bool on) {
@@ -50,41 +53,51 @@ static void DrawHighlightBox(OledDisplay<OledDriver> &disp, int x, int y, int_fa
     disp.DrawRect(rx, ry, rx + w - 1, ry + h - 1, on, true);
 }
 
-static float GetNormVal(int param_id, float val, int division_idx) {
+static float GetNormVal(int param_id, float val, int div_idx) {
     float norm = 0.0f;
     switch(param_id) {
-        case PARAM_PRE_GAIN:
-        case PARAM_POST_GAIN:
-        case PARAM_FEEDBACK:
-        case PARAM_MIX:
+        case PARAM_PRE_GAIN: 
+        case PARAM_POST_GAIN: 
+        case PARAM_FEEDBACK: 
+        case PARAM_MIX: 
         case PARAM_STEREO: 
         case PARAM_SPRAY:     norm = val; break;
         case PARAM_BPM:       norm = (val - 20.f) / (300.f - 20.f); break;
-        case PARAM_DIVISION:  norm = (float)division_idx / 3.0f; break;
+        case PARAM_DIVISION:  norm = (float)div_idx / 3.0f; break;
         case PARAM_PITCH:     norm = (12.0f * log2f(val) + 24.f) / 48.f; break;
         case PARAM_GRAIN_SIZE: norm = (val - 0.002f) / (0.5f - 0.002f); break;
         case PARAM_GRAINS:    norm = (val - 0.5f) / (50.f - 0.5f); break;
+        default: break;
     }
     return fclamp(norm, 0.0f, 1.0f);
 }
 
 static void DrawValueBar(int y, float norm_base, float norm_eff) {
-    int bar_height = 8; 
+    int bar_h  = 8; 
     int w_base = (int)(norm_base * (float)kBarColWidth);
     int w_eff  = (int)(norm_eff  * (float)kBarColWidth);
-    int w_min = (w_base < w_eff) ? w_base : w_eff;
-    int w_max = (w_base > w_eff) ? w_base : w_eff;
-    auto DrawSegment = [&](int start_w, int end_w, bool solid) {
-        if (end_w <= start_w) return;
-        int rx_s = display.Width() - 1 - (kBarColX + end_w - 1);
-        int rx_e = display.Width() - 1 - (kBarColX + start_w);
-        int ry_s = display.Height() - 1 - (y + bar_height - 1);
-        int ry_e = display.Height() - 1 - y;
-        if(solid) display.DrawRect(rx_s, ry_s, rx_e, ry_e, true, true);
-        else for(int i=start_w; i<end_w; i++) if(i%3==0) display.DrawLine(display.Width()-1-(kBarColX+i), ry_s, display.Width()-1-(kBarColX+i), ry_e, true);
-    };
-    DrawSegment(0, w_min, true);
-    DrawSegment(w_min + 2, w_max, false);
+
+    // 1. Draw solid base bar
+    int rx_base_s = display.Width() - 1 - (kBarColX + w_base - 1);
+    int rx_base_e = display.Width() - 1 - (kBarColX);
+    int ry_s = display.Height() - 1 - (y + bar_h - 1);
+    int ry_e = display.Height() - 1 - y;
+    if (w_base > 0) {
+        display.DrawRect(rx_base_s, ry_s, rx_base_e, ry_e, true, true);
+    }
+
+    // 2. Draw modulation markers (> or <)
+    if (w_eff > w_base) {
+        // Positive modulation: Draw >
+        for (int x = w_base + 2; x < w_eff; x += 4) {
+            DrawCharRot180(display, kBarColX + x, y, '>', Font_6x8, true);
+        }
+    } else if (w_eff < w_base) {
+        // Negative modulation: Draw <
+        for (int x = w_base - 6; x >= w_eff; x -= 4) {
+            DrawCharRot180(display, kBarColX + x, y, '<', Font_6x8, true);
+        }
+    }
 }
 
 void Screen::Init(DaisySeed &seed) {
@@ -103,64 +116,90 @@ void Screen::DrawStatus(Processing &proc, Hardware &hw) {
     if (blink_active && (System::GetNow() - blink_start < 100)) { display.Fill(true); display.Update(); return; }
 
     bool is_main = (proc.current_menu == kMenuMain);
+    
+    // Header
     if (!is_main) {
-        DrawStringRot180(display, 0, 0, proc.parent_menu_name, Font_7x10, true);
-        display.DrawLine(0, display.Height()-11, 127, display.Height()-11, true);
+        DrawStringRot180(display, kTextColX, 0, proc.parent_menu_name, Font_7x10, true);
+        bool back_sel = (proc.selected_item_idx == 0);
+        int back_x = 90;
+        if (back_sel) { DrawHighlightBox(display, back_x, 0, 35, 10, true); }
+        DrawStringRot180(display, back_x + 3, 0, "BACK", Font_7x10, !back_sel);
     }
+
+    // Scrollable List
     int y_start = is_main ? 0 : 12;
     for(int i = 0; i < 4; i++) {
         int idx = proc.view_top_item_idx + i;
-        if(idx >= proc.current_menu_size) break;
+        if(idx >= proc.current_menu_size) { break; }
+
         const MenuItem& item = proc.current_menu[idx];
         bool sel = (idx == proc.selected_item_idx);
         bool edit = (sel && proc.ui_state == proc.STATE_PARAM_EDIT);
-        int y = y_start + i * 11 + (!is_main && idx > 1 ? 5 : 0);
-        char value_str[16] = ""; char label_str[32] = ""; float n_base = 0.0f, n_eff = 0.0f;
+        int y = y_start + i * 11;
+
+        char value_str[24] = "";
+        float n_b = 0.0f, n_e = 0.0f;
+
         if (item.type == TYPE_PARAM || item.type == TYPE_PARAM_SUBMENU) {
-            float v_b = proc.params[item.param_id], v_e = proc.effective_params[item.param_id];
+            float v_b = proc.params[item.param_id];
+            float v_e = proc.effective_params[item.param_id];
+
             if (item.param_id == PARAM_MAP_AMT) {
-                float mv = proc.knob_map_amounts[proc.edit_param_target];
-                snprintf(value_str, 16, "%d%%", (int)(mv * 100.f));
-                n_base = n_eff = (mv + 1.f) * 0.5f;
+                float amt = proc.knob_map_amounts[proc.edit_param_target];
+                snprintf(value_str, sizeof(value_str), "%d%%", (int)(amt * 100.f));
+                n_b = n_e = (amt + 1.f) * 0.5f;
             } else {
                 switch(item.param_id) {
-                    case PARAM_PRE_GAIN: case PARAM_POST_GAIN: snprintf(value_str, 16, "%d%%", (int)(v_b * 200.f)); break;
-                    case PARAM_MIX: case PARAM_FEEDBACK: case PARAM_STEREO: case PARAM_SPRAY: snprintf(value_str, 16, "%d%%", (int)(v_b * 100.f)); break;
-                    case PARAM_BPM: snprintf(value_str, 16, "%d", (int)v_b); break;
-                    case PARAM_DIVISION: snprintf(value_str, 16, "1/%d", (int)v_b); break;
-                    case PARAM_PITCH: { float st = 12.f * log2f(v_b); snprintf(value_str, 16, "%+d.%dst", (int)st, (int)(fabsf(st*10.f))%10); break; }
-                    case PARAM_GRAIN_SIZE: snprintf(value_str, 16, "%dms", (int)(v_b * 1000.f)); break;
-                    case PARAM_GRAINS: snprintf(value_str, 16, "%dHz", (int)v_b); break;
+                    case PARAM_PRE_GAIN: 
+                    case PARAM_POST_GAIN: snprintf(value_str, 24, "%d%%", (int)(v_b * 200.f)); break;
+                    case PARAM_MIX:
+                    case PARAM_FEEDBACK:
+                    case PARAM_STEREO:
+                    case PARAM_SPRAY:     snprintf(value_str, 24, "%d%%", (int)(v_b * 100.f)); break;
+                    case PARAM_BPM:       snprintf(value_str, 24, "%d BPM", (int)v_b); break;
+                    case PARAM_DIVISION:  snprintf(value_str, 24, "1/%d", (int)v_b); break;
+                    case PARAM_PITCH: {
+                        float st = 12.f * log2f(v_b);
+                        snprintf(value_str, 24, "%+.1fst", st);
+                    } break;
+                    case PARAM_GRAIN_SIZE: snprintf(value_str, 24, "%dms", (int)(v_b * 1000.f)); break;
+                    case PARAM_GRAINS:     snprintf(value_str, 24, "%dHz", (int)v_b); break;
                 }
-                n_base = GetNormVal(item.param_id, v_b, proc.division_idx); n_eff  = GetNormVal(item.param_id, v_e, proc.division_idx);
+                n_b = GetNormVal(item.param_id, v_b, proc.division_idx);
+                n_e = GetNormVal(item.param_id, v_e, proc.division_idx);
             }
+            DrawValueBar(y, n_b, n_e);
         }
-        if (edit) { snprintf(label_str, 32, "%s", value_str); DrawHighlightBox(display, kTextColX, y - 1, kTextColWidth, 10, true); } else snprintf(label_str, 32, "%s", item.name);
-        if (sel) DrawSelectionIndicator(y, edit);
-        DrawStringRot180(display, kTextColX + 1, y, label_str, Font_7x10, !edit);
-        if (item.type == TYPE_PARAM || item.type == TYPE_PARAM_SUBMENU) DrawValueBar(y, n_base, n_eff);
+
+        if (sel) { DrawSelectionIndicator(y, edit); }
+        if (edit) {
+            DrawHighlightBox(display, kTextColX, y - 1, kTextColWidth, 10, true);
+            DrawStringRot180(display, kTextColX + 1, y, value_str, Font_7x10, false);
+        } else {
+            DrawStringRot180(display, kTextColX + 1, y, item.name, Font_7x10, true);
+        }
     }
 
-    // --- Looper Status Bar ---
-    int y_status = 54;
+    // Looper Row
+    int y_looper = 54;
     const char* mode_str = "---";
-    if (hw.looper_mode == Hardware::LP_RECORDING) mode_str = "REC";
-    else if (hw.looper_mode == Hardware::LP_PLAYING) mode_str = "PLY";
-    else if (hw.looper_mode == Hardware::LP_STOPPED) mode_str = "STP";
-    DrawStringRot180(display, 0, y_status, mode_str, Font_7x10, true);
+    if (hw.looper_mode == Hardware::LP_RECORDING) { mode_str = "REC"; }
+    else if (hw.looper_mode == Hardware::LP_PLAYING) { mode_str = "PLY"; }
+    else if (hw.looper_mode == Hardware::LP_STOPPED) { mode_str = "STP"; }
+    DrawStringRot180(display, 0, y_looper, mode_str, Font_7x10, true);
 
     if (hw.looper_mode != Hardware::LP_EMPTY) {
-        float prog = (hw.looper_mode == Hardware::LP_RECORDING) ? 
-                     (float)hw.rec_pos / (LOOPER_MAX_SAMPLES / 2) : 
-                     (hw.loop_length > 0 ? (float)hw.play_pos / hw.loop_length : 0.0f);
+        float prog = (hw.looper_mode == Hardware::LP_RECORDING) ? (float)hw.rec_pos / (LOOPER_MAX_SAMPLES/2) : (hw.loop_length > 0 ? (float)hw.play_pos / hw.loop_length : 0.0f);
         int bar_x = 30, bar_w = 98, bar_h = 8;
         int rx_s = display.Width() - 1 - (bar_x + bar_w - 1);
         int rx_e = display.Width() - 1 - bar_x;
-        int ry_s = display.Height() - 1 - (y_status + bar_h - 1);
-        int ry_e = display.Height() - 1 - y_status;
+        int ry_s = display.Height() - 1 - (y_looper + bar_h - 1);
+        int ry_e = display.Height() - 1 - y_looper;
         display.DrawRect(rx_s, ry_s, rx_e, ry_e, true, false);
         int fill_w = (int)(prog * (float)bar_w);
-        if (fill_w > 0) display.DrawRect(display.Width() - 1 - (bar_x + fminf(fill_w, bar_w) - 1), ry_s, rx_e, ry_e, true, true);
+        if (fill_w > 0) {
+            display.DrawRect(display.Width() - 1 - (bar_x + fminf(fill_w, bar_w) - 1), ry_s, rx_e, ry_e, true, true);
+        }
     }
     display.Update();
 }
