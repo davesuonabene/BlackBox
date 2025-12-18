@@ -2,58 +2,24 @@
 #include <string.h> 
 #include <math.h>   
 #include <stdlib.h> 
-#include <cstdio> // for snprintf
+#include <cstdio> 
 
 using namespace daisy;
 using namespace daisysp;
 
-// --- Menu Tree Definition ---
+// ... [Menu Definitions Omitted for Brevity - Unchanged] ...
+// (Assume standard Menu Definitions here as per previous files)
 
-// 1. Generic Edit Menu
-const MenuItem kMenuGenericEdit[] = {
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, 
-    {"< Back",  TYPE_BACK,  0,             kMenuMain, 0},
-};
+const MenuItem kMenuGenericEdit[] = { {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, {"< Back", TYPE_BACK, 0, kMenuMain, 0} };
 const int kMenuGenericEditSize = sizeof(kMenuGenericEdit) / sizeof(kMenuGenericEdit[0]);
-
-// 2. Post Gain Submenu (Send Removed)
-const MenuItem kMenuPostEdit[] = {
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0}, 
-    {"< Back",  TYPE_BACK,  0,              kMenuMain, 0},
-    {"Pre",     TYPE_PARAM, PARAM_PRE_GAIN, nullptr, 0},
-};
+const MenuItem kMenuPostEdit[] = { {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, {"< Back", TYPE_BACK, 0, kMenuMain, 0}, {"Pre", TYPE_PARAM, PARAM_PRE_GAIN, nullptr, 0} };
 const int kMenuPostEditSize = sizeof(kMenuPostEdit) / sizeof(kMenuPostEdit[0]);
-
-// 3. BPM Edit Menu
-const MenuItem kMenuBpmEdit[] = {
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0},
-    {"< Back",  TYPE_BACK,  0,              kMenuMain, 0},
-    {"Div",     TYPE_PARAM, PARAM_DIVISION, nullptr, 0},
-};
+const MenuItem kMenuBpmEdit[] = { {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, {"< Back", TYPE_BACK, 0, kMenuMain, 0}, {"Div", TYPE_PARAM, PARAM_DIVISION, nullptr, 0} };
 const int kMenuBpmEditSize = sizeof(kMenuBpmEdit) / sizeof(kMenuBpmEdit[0]);
-
-// 4. Grains Submenu (Spray and Stereo moved here)
-const MenuItem kMenuGrainsEdit[] = {
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0},
-    {"< Back",  TYPE_BACK,  0,              kMenuMain, 0},
-    {"Spray",   TYPE_PARAM, PARAM_SPRAY,    nullptr, 0},
-    {"Stereo",  TYPE_PARAM, PARAM_STEREO,   nullptr, 0},
-};
+const MenuItem kMenuGrainsEdit[] = { {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, {"< Back", TYPE_BACK, 0, kMenuMain, 0}, {"Spray", TYPE_PARAM, PARAM_SPRAY, nullptr, 0}, {"Stereo", TYPE_PARAM, PARAM_STEREO, nullptr, 0} };
 const int kMenuGrainsEditSize = sizeof(kMenuGrainsEdit) / sizeof(kMenuGrainsEdit[0]);
-
-// 5. Main Menu
-// Replaced Density with Grains (Submenu), Removed Stereo (Moved to Grains), Removed Post Send
-const MenuItem kMenuMain[] = {
-    {"Post",    TYPE_PARAM_SUBMENU, PARAM_POST_GAIN,    kMenuPostEdit,    kMenuPostEditSize},
-    {"Fbk",     TYPE_PARAM,         PARAM_FEEDBACK,     nullptr,          0},
-    {"Mix",     TYPE_PARAM,         PARAM_MIX,          nullptr,          0},
-    {"BPM",     TYPE_PARAM_SUBMENU, PARAM_BPM,          kMenuBpmEdit,     kMenuBpmEditSize},
-    {"Pitch",   TYPE_PARAM,         PARAM_PITCH,        nullptr,          0},
-    {"Size",    TYPE_PARAM,         PARAM_GRAIN_SIZE,   nullptr,          0},
-    {"Grains",  TYPE_PARAM_SUBMENU, PARAM_GRAINS,       kMenuGrainsEdit,  kMenuGrainsEditSize},
-};
+const MenuItem kMenuMain[] = { {"Post", TYPE_PARAM_SUBMENU, PARAM_POST_GAIN, kMenuPostEdit, kMenuPostEditSize}, {"Fbk", TYPE_PARAM, PARAM_FEEDBACK, nullptr, 0}, {"Mix", TYPE_PARAM, PARAM_MIX, nullptr, 0}, {"BPM", TYPE_PARAM_SUBMENU, PARAM_BPM, kMenuBpmEdit, kMenuBpmEditSize}, {"Pitch", TYPE_PARAM, PARAM_PITCH, nullptr, 0}, {"Size", TYPE_PARAM, PARAM_GRAIN_SIZE, nullptr, 0}, {"Grains", TYPE_PARAM_SUBMENU, PARAM_GRAINS, kMenuGrainsEdit, kMenuGrainsEditSize} };
 const int kMenuMainSize = sizeof(kMenuMain) / sizeof(kMenuMain[0]);
-
 
 // --- Static Member Definitions ---
 float DSY_SDRAM_BSS Processing::buffer[MAX_BUFFER_SAMPLES];
@@ -65,30 +31,19 @@ void Processing::Init(Hardware &hw)
     memset(buffer, 0, MAX_BUFFER_SAMPLES * sizeof(float));
     sample_rate_ = hw.sample_rate;
 
-    // Default Params
-    params[PARAM_PRE_GAIN]      = 0.5f; 
-    // PARAM_SEND removed
-    params[PARAM_FEEDBACK]      = 0.5f;
-    params[PARAM_MIX]           = 0.5f;
-    params[PARAM_POST_GAIN]     = 0.5f;
-    params[PARAM_BPM]           = 120.0f;
-    params[PARAM_DIVISION]      = 1.0f; 
-    params[PARAM_PITCH]         = 1.0f; 
-    params[PARAM_GRAIN_SIZE]    = 0.1f;
-    params[PARAM_GRAINS]        = 10.0f; // Formerly Density
-    params[PARAM_SPRAY]         = 0.0f;  // Default no spray
-    params[PARAM_STEREO]        = 0.0f;
+    // Params Init
+    params[PARAM_PRE_GAIN] = 0.5f; params[PARAM_FEEDBACK] = 0.5f; params[PARAM_MIX] = 0.5f;
+    params[PARAM_POST_GAIN] = 0.5f; params[PARAM_BPM] = 120.0f; params[PARAM_DIVISION] = 1.0f; 
+    params[PARAM_PITCH] = 1.0f; params[PARAM_GRAIN_SIZE] = 0.1f; params[PARAM_GRAINS] = 10.0f; 
+    params[PARAM_SPRAY] = 0.0f; params[PARAM_STEREO] = 0.0f;
 
-    // Initialize Maps to 0
-    for(int i=0; i<PARAM_COUNT; i++) {
-        knob_map_amounts[i] = 0.0f;
-        effective_params[i] = params[i];
-    }
-    
+    for(int i=0; i<PARAM_COUNT; i++) { knob_map_amounts[i] = 0.0f; effective_params[i] = params[i]; }
     snprintf(parent_menu_name, sizeof(parent_menu_name), " ");
+    division_idx = 0; params[PARAM_DIVISION] = (float)division_vals[division_idx];
 
-    division_idx = 0; 
-    params[PARAM_DIVISION] = (float)division_vals[division_idx];
+    // Button Init
+    last_button_press_time = 0;
+    long_press_active = false;
 
     UpdateBufferLen();
     UpdateGrainParams();
@@ -96,192 +51,117 @@ void Processing::Init(Hardware &hw)
 
 void Processing::Controls(Hardware &hw)
 {
-    // --- Potentiometer Logic ---
+    // Potentiometer & Param Logic (Unchanged)
     hw.pot.Process();
     float pot_val = hw.pot.Value();
-
-    for (int i = 0; i < PARAM_COUNT; i++)
-    {
+    for (int i = 0; i < PARAM_COUNT; i++) {
         if (i == PARAM_DIVISION || i == PARAM_MAP_AMT) continue;
-
-        float base = params[i];
-        float map  = knob_map_amounts[i]; 
-        
-        float range = 1.0f; 
-        float min_val = 0.0f;
-        float max_val = 1.0f;
-
-        switch(i)
-        {
-            case PARAM_BPM: 
-                min_val = 20.0f; max_val = 300.0f; range = 280.0f; break;
-            case PARAM_PITCH: 
-                min_val = 0.25f; max_val = 4.0f; range = 3.75f; break; 
-            case PARAM_GRAIN_SIZE:
-                min_val = 0.002f; max_val = 0.5f; range = 0.498f; break;
-            case PARAM_GRAINS: // Density range
-                min_val = 0.5f; max_val = 50.0f; range = 49.5f; break;
-            default: 
-                min_val = 0.0f; max_val = 1.0f; range = 1.0f; break;
+        float base = params[i]; float map  = knob_map_amounts[i]; float range = 1.0f; float min_val = 0.0f; float max_val = 1.0f;
+        switch(i) {
+            case PARAM_BPM: min_val = 20.0f; max_val = 300.0f; range = 280.0f; break;
+            case PARAM_PITCH: min_val = 0.25f; max_val = 4.0f; range = 3.75f; break; 
+            case PARAM_GRAIN_SIZE: min_val = 0.002f; max_val = 0.5f; range = 0.498f; break;
+            case PARAM_GRAINS: min_val = 0.5f; max_val = 50.0f; range = 49.5f; break;
+            default: break;
         }
-
-        float mod = pot_val * map * range;
-        effective_params[i] = fclamp(base + mod, min_val, max_val);
+        effective_params[i] = fclamp(base + (pot_val * map * range), min_val, max_val);
     }
-    
     UpdateBufferLen(); 
 
     // --- Button Logic ---
     hw.button.Debounce();
-    if(hw.button.RisingEdge())
-    {
-        trigger_blink = true;
+    bool btn_pressed = hw.button.Pressed();
+    bool btn_rising  = hw.button.RisingEdge();
+    uint32_t now = System::GetNow();
+
+    // 1. Hold to Clear
+    if(btn_pressed && !long_press_active) {
+        if(hw.button.TimeHeldMs() > 1000) {
+            hw.Reset(); // Clears everything
+            long_press_active = true; 
+            trigger_blink = true;
+        }
+    }
+    if(!btn_pressed) long_press_active = false;
+
+    // 2. Taps
+    if(btn_rising) {
+        if(now - last_button_press_time < 400) {
+            // DOUBLE TAP -> STOP
+            hw.looper_mode = Hardware::LP_STOPPED;
+            trigger_blink = true;
+        }
+        else {
+            // SINGLE TAP -> Transport
+            trigger_blink = true;
+            if (hw.looper_mode == Hardware::LP_EMPTY) {
+                // Start Recording (Fresh)
+                hw.looper_mode = Hardware::LP_RECORDING;
+                hw.rec_pos = 0; 
+            }
+            else if (hw.looper_mode == Hardware::LP_RECORDING) {
+                // Stop Recording -> Play (Swap Buffers)
+                hw.SwitchToNewLoop();
+                hw.looper_mode = Hardware::LP_PLAYING;
+            }
+            else if (hw.looper_mode == Hardware::LP_PLAYING) {
+                // Start Recording (Resample into NEW buffer)
+                hw.looper_mode = Hardware::LP_RECORDING;
+                hw.rec_pos = 0; // Start new buffer from scratch
+            }
+            else if (hw.looper_mode == Hardware::LP_STOPPED) {
+                hw.looper_mode = Hardware::LP_PLAYING;
+            }
+        }
+        last_button_press_time = now;
     }
 
-    // --- Encoder Logic ---
+    // Encoder Logic (Unchanged) ...
+    // [Keeping existing encoder code from previous artifact]
     hw.encoder.Debounce();
     int32_t inc = hw.encoder.Increment();
-
-    if(hw.encoder.RisingEdge())
-    {
-        enc_hold_start = System::GetNow();
-        enc_is_holding = true;
-    }
-
-    if(enc_is_holding && hw.encoder.TimeHeldMs() >= kHoldTimeMs)
-    {
+    if(hw.encoder.RisingEdge()) { enc_hold_start = System::GetNow(); enc_is_holding = true; }
+    if(enc_is_holding && hw.encoder.TimeHeldMs() >= kHoldTimeMs) {
         enc_is_holding = false; 
-        
         const MenuItem& item = GetSelectedItem();
-        if (ui_state == STATE_MENU_NAV)
-        {
+        if (ui_state == STATE_MENU_NAV) {
             snprintf(parent_menu_name, sizeof(parent_menu_name), "%s", item.name);
-
-            if(item.type == TYPE_PARAM)
-            {
-                edit_param_target = item.param_id; 
-                current_menu = kMenuGenericEdit;
-                current_menu_size = kMenuGenericEditSize;
-                selected_item_idx = 0;
-                view_top_item_idx = 0;
-            }
-            else if(item.type == TYPE_PARAM_SUBMENU)
-            {
-                edit_param_target = item.param_id;
-                current_menu = item.submenu;
-                current_menu_size = item.num_children;
-                selected_item_idx = 0;
-                view_top_item_idx = 0;
-            }
+            if(item.type == TYPE_PARAM) { edit_param_target = item.param_id; current_menu = kMenuGenericEdit; current_menu_size = kMenuGenericEditSize; selected_item_idx = 0; view_top_item_idx = 0; }
+            else if(item.type == TYPE_PARAM_SUBMENU) { edit_param_target = item.param_id; current_menu = item.submenu; current_menu_size = item.num_children; selected_item_idx = 0; view_top_item_idx = 0; }
         }
     }
-
-    if(hw.encoder.FallingEdge())
-    {
-        if(enc_is_holding) 
-        {
+    if(hw.encoder.FallingEdge()) {
+        if(enc_is_holding) {
             enc_is_holding = false;
             const MenuItem& item = GetSelectedItem();
-
-            if (ui_state == STATE_MENU_NAV)
-            {
-                switch(item.type)
-                {
-                    case TYPE_PARAM:
-                    case TYPE_PARAM_SUBMENU: 
-                        ui_state = STATE_PARAM_EDIT;
-                        break;
-                    case TYPE_SUBMENU:
-                        current_menu = item.submenu;
-                        current_menu_size = item.num_children;
-                        selected_item_idx = 0;
-                        view_top_item_idx = 0;
-                        break;
-                    case TYPE_BACK:
-                        current_menu = item.submenu;
-                        if (current_menu == kMenuMain)
-                            current_menu_size = kMenuMainSize;
-                        else
-                            current_menu_size = 0; 
-                        
-                        selected_item_idx = 0;
-                        view_top_item_idx = 0;
-                        break;
+            if (ui_state == STATE_MENU_NAV) {
+                switch(item.type) {
+                    case TYPE_PARAM: case TYPE_PARAM_SUBMENU: ui_state = STATE_PARAM_EDIT; break;
+                    case TYPE_SUBMENU: current_menu = item.submenu; current_menu_size = item.num_children; selected_item_idx = 0; view_top_item_idx = 0; break;
+                    case TYPE_BACK: current_menu = item.submenu; current_menu_size = (current_menu == kMenuMain) ? kMenuMainSize : 0; selected_item_idx = 0; view_top_item_idx = 0; break;
                 }
-            }
-            else
-            {
-                ui_state = STATE_MENU_NAV;
-            }
+            } else { ui_state = STATE_MENU_NAV; }
         }
     }
-
-    if(inc != 0)
-    {
-        if(ui_state == STATE_MENU_NAV)
-        {
+    if(inc != 0) {
+        if(ui_state == STATE_MENU_NAV) {
             selected_item_idx += inc;
             if(selected_item_idx < 0) selected_item_idx = current_menu_size - 1;
             if(selected_item_idx >= current_menu_size) selected_item_idx = 0;
-
-            const int max_lines = 4; 
-            if(selected_item_idx < view_top_item_idx)
-                view_top_item_idx = selected_item_idx;
-            else if(selected_item_idx >= view_top_item_idx + max_lines)
-                view_top_item_idx = selected_item_idx - (max_lines - 1);
-        }
-        else
-        {
+            if(selected_item_idx < view_top_item_idx) view_top_item_idx = selected_item_idx;
+            else if(selected_item_idx >= view_top_item_idx + 4) view_top_item_idx = selected_item_idx - 3;
+        } else {
             int param_id = GetSelectedItem().param_id;
-            
-            if (param_id == PARAM_MAP_AMT)
-            {
-                float val = knob_map_amounts[edit_param_target];
-                val += (float)inc * 0.05f; 
-                knob_map_amounts[edit_param_target] = fclamp(val, -1.0f, 1.0f);
-            }
-            else
-            {
-                float val = params[param_id];
-                float delta = 0.01f * inc; 
-                
-                switch(param_id)
-                {
-                    case PARAM_PRE_GAIN:
-                    case PARAM_POST_GAIN:
-                    // PARAM_SEND removed
-                    case PARAM_FEEDBACK:
-                    case PARAM_MIX:
-                    case PARAM_STEREO:
-                    case PARAM_SPRAY:
-                        params[param_id] = fclamp(val + delta, 0.0f, 1.0f);
-                        break;
-                    case PARAM_BPM:
-                        params[param_id] = fclamp(val + (delta * 100.0f), 20.0f, 300.0f);
-                        break;
-                    case PARAM_DIVISION:
-                        division_idx += inc > 0 ? 1 : -1;
-                        if(division_idx < 0) division_idx = 3;
-                        if(division_idx > 3) division_idx = 0;
-                        params[param_id] = (float)division_vals[division_idx];
-                        break;
-                    case PARAM_PITCH: 
-                        val = 12.0f * log2f(val); 
-                        val += (delta * 100.0f); 
-                        val = fclamp(val, -24.0f, 24.0f); 
-                        params[param_id] = powf(2.0f, val / 12.0f); 
-                        break;
-                    case PARAM_GRAIN_SIZE: 
-                    {
-                        float vel_mod = fminf((float)abs(inc) * 0.5f, 5.0f);
-                        float fine_delta = (inc > 0 ? 1.0f : -1.0f) * (0.001f + (0.005f * vel_mod));
-                        params[param_id] = fclamp(val + fine_delta, 0.002f, 0.5f);
-                    }
-                        break;
-                    case PARAM_GRAINS: 
-                        params[param_id] = fclamp(val + (delta * 10.0f), 0.5f, 50.0f);
-                        UpdateGrainParams();
-                        break;
+            if (param_id == PARAM_MAP_AMT) { float val = knob_map_amounts[edit_param_target]; val += (float)inc * 0.05f; knob_map_amounts[edit_param_target] = fclamp(val, -1.0f, 1.0f); }
+            else {
+                float val = params[param_id]; float delta = 0.01f * inc; 
+                switch(param_id) {
+                    case PARAM_PRE_GAIN: case PARAM_POST_GAIN: case PARAM_FEEDBACK: case PARAM_MIX: case PARAM_STEREO: case PARAM_SPRAY: params[param_id] = fclamp(val + delta, 0.0f, 1.0f); break;
+                    case PARAM_BPM: params[param_id] = fclamp(val + (delta * 100.0f), 20.0f, 300.0f); break;
+                    case PARAM_DIVISION: division_idx += inc > 0 ? 1 : -1; if(division_idx < 0) division_idx = 3; if(division_idx > 3) division_idx = 0; params[param_id] = (float)division_vals[division_idx]; break;
+                    case PARAM_PITCH: val = 12.0f * log2f(val); val += (delta * 100.0f); val = fclamp(val, -24.0f, 24.0f); params[param_id] = powf(2.0f, val / 12.0f); break;
+                    case PARAM_GRAIN_SIZE: { float vel_mod = fminf((float)abs(inc) * 0.5f, 5.0f); float fine_delta = (inc > 0 ? 1.0f : -1.0f) * (0.001f + (0.005f * vel_mod)); params[param_id] = fclamp(val + fine_delta, 0.002f, 0.5f); } break;
+                    case PARAM_GRAINS: params[param_id] = fclamp(val + (delta * 10.0f), 0.5f, 50.0f); UpdateGrainParams(); break;
                     default: break;
                 }
             }
@@ -304,7 +184,7 @@ void Processing::UpdateBufferLen()
     if(buffer_len_samples < 4) 
         buffer_len_samples = 4;
         
-    // Reset write head if it's outside the new buffer length to prevent overflow
+    // Reset write head if it's outside the new buffer length
     if(write_pos >= buffer_len_samples) write_pos = 0;
 }
 
@@ -315,7 +195,6 @@ void Processing::UpdateGrainParams()
     if(density_hz < 0.1f) density_hz = 0.1f;
     float base_interval = sample_rate_ / density_hz;
     
-    // Stereo spread affects trigger intervals
     float l_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
     float r_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
     grain_trig_interval_l = (uint32_t)(base_interval * l_rand);
@@ -337,7 +216,7 @@ void Processing::GetSample(float &outl, float &outr, float inl, float inr)
     float inl_gained = inl * pre_gain;
     float inr_gained = inr * pre_gain;
     
-    float wet_in = (inl_gained + inr_gained) * 0.5f; // No Send amount, just mix in
+    float wet_in = (inl_gained + inr_gained) * 0.5f; 
     float old_samp = buffer[write_pos];
     
     buffer[write_pos] = fclamp(wet_in + (old_samp * fbk), -1.0f, 1.0f);
@@ -348,8 +227,6 @@ void Processing::GetSample(float &outl, float &outr, float inl, float inr)
         float size_mod = (1.0f - stereo) + (rand_.Process() * stereo);
         uint32_t size_samps = (uint32_t)(effective_params[PARAM_GRAIN_SIZE] * sample_rate_ * size_mod);
 
-        // SPRAY LOGIC (Backwards)
-        // Window up to 500ms based on Spray param
         float spray_window = spray * 0.5f * sample_rate_; 
         float rnd_offset = rand_.Process() * spray_window;
         
@@ -359,6 +236,7 @@ void Processing::GetSample(float &outl, float &outr, float inl, float inr)
         {
             if(!grains_l[i].active)
             {
+                // ADDED buffer_len_samples (5th argument)
                 grains_l[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples);
                 break;
             }
@@ -382,6 +260,7 @@ void Processing::GetSample(float &outl, float &outr, float inl, float inr)
         {
             if(!grains_r[i].active)
             {
+                // ADDED buffer_len_samples (5th argument)
                 grains_r[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples);
                 break;
             }

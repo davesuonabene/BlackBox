@@ -18,14 +18,43 @@ struct Hardware
     float     sample_rate;
 
     // --- Looper Data ---
-    // Buffer placed in external SDRAM
-    static float DSY_SDRAM_BSS loop_buffer[LOOPER_MAX_SAMPLES];
+    // Double Buffering in SDRAM
+    static float DSY_SDRAM_BSS buffer_a[LOOPER_MAX_SAMPLES];
+    static float DSY_SDRAM_BSS buffer_b[LOOPER_MAX_SAMPLES];
+
+    // Pointers to the current buffers
+    float* active_buffer = nullptr; // The buffer being played (Old loop)
+    float* rec_buffer    = nullptr; // The buffer being written (New loop)
     
-    enum LooperMode { LP_EMPTY, LP_RECORDING, LP_PLAYING };
+    enum LooperMode { LP_EMPTY, LP_RECORDING, LP_PLAYING, LP_STOPPED };
     LooperMode looper_mode = LP_EMPTY;
     
-    uint32_t loop_length = 0;
-    uint32_t loop_pos = 0;
+    uint32_t loop_length = 0; // Length of the active loop
+    uint32_t play_pos    = 0; // Read head position
+    uint32_t rec_pos     = 0; // Write head position
 
     void Init();
+    
+    // Helper to swap buffers after recording
+    void SwitchToNewLoop()
+    {
+        active_buffer = rec_buffer;
+        loop_length   = rec_pos;
+        play_pos      = 0;
+        
+        // Next recording will use the other buffer
+        if (active_buffer == buffer_a) rec_buffer = buffer_b;
+        else                           rec_buffer = buffer_a;
+    }
+    
+    void Reset()
+    {
+        looper_mode = LP_EMPTY;
+        loop_length = 0;
+        play_pos    = 0;
+        rec_pos     = 0;
+        // Reset pointers defaults
+        active_buffer = buffer_a;
+        rec_buffer    = buffer_b;
+    }
 };

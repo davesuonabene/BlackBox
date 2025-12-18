@@ -162,7 +162,8 @@ struct Processing
     bool            enc_is_holding = false;
     uint32_t        enc_hold_start = 0;
 
-    // --- Communication Flags ---
+    // --- Button Debounce/State ---
+    uint32_t        last_looper_toggle = 0; // Fix: Cooldown timer
     bool            trigger_blink = false;
 
     void Init(Hardware &hw);
