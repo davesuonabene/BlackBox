@@ -10,25 +10,21 @@ using namespace daisysp;
 // --- Menu Tree Definition ---
 
 // 1. Generic Edit Menu
-// Order: Map, Back (Separator drawn in screen.cpp)
 const MenuItem kMenuGenericEdit[] = {
     {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, 
     {"< Back",  TYPE_BACK,  0,             kMenuMain, 0},
 };
 const int kMenuGenericEditSize = sizeof(kMenuGenericEdit) / sizeof(kMenuGenericEdit[0]);
 
-// 2. Post Gain Submenu (Pre, Send)
-// Order: Map, Back, (Separator), Pre, Send
+// 2. Post Gain Submenu (Send Removed)
 const MenuItem kMenuPostEdit[] = {
     {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0}, 
     {"< Back",  TYPE_BACK,  0,              kMenuMain, 0},
     {"Pre",     TYPE_PARAM, PARAM_PRE_GAIN, nullptr, 0},
-    {"Send",    TYPE_PARAM, PARAM_SEND,     nullptr, 0},
 };
 const int kMenuPostEditSize = sizeof(kMenuPostEdit) / sizeof(kMenuPostEdit[0]);
 
 // 3. BPM Edit Menu
-// Order: Map, Back, (Separator), Div
 const MenuItem kMenuBpmEdit[] = {
     {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0},
     {"< Back",  TYPE_BACK,  0,              kMenuMain, 0},
@@ -36,17 +32,25 @@ const MenuItem kMenuBpmEdit[] = {
 };
 const int kMenuBpmEditSize = sizeof(kMenuBpmEdit) / sizeof(kMenuBpmEdit[0]);
 
-// 4. Main Menu
-// Fbk and Mix are back here. Post controls Pre/Send via submenu.
+// 4. Grains Submenu (Spray and Stereo moved here)
+const MenuItem kMenuGrainsEdit[] = {
+    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0},
+    {"< Back",  TYPE_BACK,  0,              kMenuMain, 0},
+    {"Spray",   TYPE_PARAM, PARAM_SPRAY,    nullptr, 0},
+    {"Stereo",  TYPE_PARAM, PARAM_STEREO,   nullptr, 0},
+};
+const int kMenuGrainsEditSize = sizeof(kMenuGrainsEdit) / sizeof(kMenuGrainsEdit[0]);
+
+// 5. Main Menu
+// Replaced Density with Grains (Submenu), Removed Stereo (Moved to Grains), Removed Post Send
 const MenuItem kMenuMain[] = {
-    {"Post",    TYPE_PARAM_SUBMENU, PARAM_POST_GAIN,    kMenuPostEdit,  kMenuPostEditSize},
-    {"Fbk",     TYPE_PARAM,         PARAM_FEEDBACK,     nullptr,        0},
-    {"Mix",     TYPE_PARAM,         PARAM_MIX,          nullptr,        0},
-    {"BPM",     TYPE_PARAM_SUBMENU, PARAM_BPM,          kMenuBpmEdit,   kMenuBpmEditSize},
-    {"Pitch",   TYPE_PARAM,         PARAM_PITCH,        nullptr,        0},
-    {"Size",    TYPE_PARAM,         PARAM_GRAIN_SIZE,   nullptr,        0},
-    {"Density", TYPE_PARAM,         PARAM_GRAIN_DENSITY,nullptr,        0},
-    {"Stereo",  TYPE_PARAM,         PARAM_STEREO,       nullptr,        0},
+    {"Post",    TYPE_PARAM_SUBMENU, PARAM_POST_GAIN,    kMenuPostEdit,    kMenuPostEditSize},
+    {"Fbk",     TYPE_PARAM,         PARAM_FEEDBACK,     nullptr,          0},
+    {"Mix",     TYPE_PARAM,         PARAM_MIX,          nullptr,          0},
+    {"BPM",     TYPE_PARAM_SUBMENU, PARAM_BPM,          kMenuBpmEdit,     kMenuBpmEditSize},
+    {"Pitch",   TYPE_PARAM,         PARAM_PITCH,        nullptr,          0},
+    {"Size",    TYPE_PARAM,         PARAM_GRAIN_SIZE,   nullptr,          0},
+    {"Grains",  TYPE_PARAM_SUBMENU, PARAM_GRAINS,       kMenuGrainsEdit,  kMenuGrainsEditSize},
 };
 const int kMenuMainSize = sizeof(kMenuMain) / sizeof(kMenuMain[0]);
 
@@ -63,7 +67,7 @@ void Processing::Init(Hardware &hw)
 
     // Default Params
     params[PARAM_PRE_GAIN]      = 0.5f; 
-    params[PARAM_SEND]          = 1.0f;
+    // PARAM_SEND removed
     params[PARAM_FEEDBACK]      = 0.5f;
     params[PARAM_MIX]           = 0.5f;
     params[PARAM_POST_GAIN]     = 0.5f;
@@ -71,7 +75,8 @@ void Processing::Init(Hardware &hw)
     params[PARAM_DIVISION]      = 1.0f; 
     params[PARAM_PITCH]         = 1.0f; 
     params[PARAM_GRAIN_SIZE]    = 0.1f;
-    params[PARAM_GRAIN_DENSITY] = 10.0f;
+    params[PARAM_GRAINS]        = 10.0f; // Formerly Density
+    params[PARAM_SPRAY]         = 0.0f;  // Default no spray
     params[PARAM_STEREO]        = 0.0f;
 
     // Initialize Maps to 0
@@ -80,7 +85,6 @@ void Processing::Init(Hardware &hw)
         effective_params[i] = params[i];
     }
     
-    // Default parent name
     snprintf(parent_menu_name, sizeof(parent_menu_name), " ");
 
     division_idx = 0; 
@@ -96,7 +100,6 @@ void Processing::Controls(Hardware &hw)
     hw.pot.Process();
     float pot_val = hw.pot.Value();
 
-    // Calculate Effective Params
     for (int i = 0; i < PARAM_COUNT; i++)
     {
         if (i == PARAM_DIVISION || i == PARAM_MAP_AMT) continue;
@@ -116,7 +119,7 @@ void Processing::Controls(Hardware &hw)
                 min_val = 0.25f; max_val = 4.0f; range = 3.75f; break; 
             case PARAM_GRAIN_SIZE:
                 min_val = 0.002f; max_val = 0.5f; range = 0.498f; break;
-            case PARAM_GRAIN_DENSITY:
+            case PARAM_GRAINS: // Density range
                 min_val = 0.5f; max_val = 50.0f; range = 49.5f; break;
             default: 
                 min_val = 0.0f; max_val = 1.0f; range = 1.0f; break;
@@ -152,7 +155,6 @@ void Processing::Controls(Hardware &hw)
         const MenuItem& item = GetSelectedItem();
         if (ui_state == STATE_MENU_NAV)
         {
-            // Capture Parent Name for Header
             snprintf(parent_menu_name, sizeof(parent_menu_name), "%s", item.name);
 
             if(item.type == TYPE_PARAM)
@@ -247,10 +249,11 @@ void Processing::Controls(Hardware &hw)
                 {
                     case PARAM_PRE_GAIN:
                     case PARAM_POST_GAIN:
-                    case PARAM_SEND:
+                    // PARAM_SEND removed
                     case PARAM_FEEDBACK:
                     case PARAM_MIX:
                     case PARAM_STEREO:
+                    case PARAM_SPRAY:
                         params[param_id] = fclamp(val + delta, 0.0f, 1.0f);
                         break;
                     case PARAM_BPM:
@@ -275,7 +278,7 @@ void Processing::Controls(Hardware &hw)
                         params[param_id] = fclamp(val + fine_delta, 0.002f, 0.5f);
                     }
                         break;
-                    case PARAM_GRAIN_DENSITY: 
+                    case PARAM_GRAINS: 
                         params[param_id] = fclamp(val + (delta * 10.0f), 0.5f, 50.0f);
                         UpdateGrainParams();
                         break;
@@ -300,15 +303,19 @@ void Processing::UpdateBufferLen()
         buffer_len_samples = MAX_BUFFER_SAMPLES;
     if(buffer_len_samples < 4) 
         buffer_len_samples = 4;
-    write_pos = 0; 
+        
+    // Reset write head if it's outside the new buffer length to prevent overflow
+    if(write_pos >= buffer_len_samples) write_pos = 0;
 }
 
 void Processing::UpdateGrainParams()
 {
-    float density_hz = effective_params[PARAM_GRAIN_DENSITY];
+    float density_hz = effective_params[PARAM_GRAINS];
     float stereo_amt = effective_params[PARAM_STEREO];
     if(density_hz < 0.1f) density_hz = 0.1f;
     float base_interval = sample_rate_ / density_hz;
+    
+    // Stereo spread affects trigger intervals
     float l_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
     float r_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
     grain_trig_interval_l = (uint32_t)(base_interval * l_rand);
@@ -320,29 +327,39 @@ void Processing::UpdateGrainParams()
 void Processing::GetSample(float &outl, float &outr, float inl, float inr)
 {
     float pre_gain  = effective_params[PARAM_PRE_GAIN] * 2.0f; 
-    float send      = effective_params[PARAM_SEND];
+    // Send removed
     float fbk       = effective_params[PARAM_FEEDBACK];
     float mix       = effective_params[PARAM_MIX];
     float post_gain = effective_params[PARAM_POST_GAIN] * 2.0f;
     float stereo    = effective_params[PARAM_STEREO];
+    float spray     = effective_params[PARAM_SPRAY];
     
     float inl_gained = inl * pre_gain;
     float inr_gained = inr * pre_gain;
     
-    float wet_in = (inl_gained + inr_gained) * 0.5f * send;
+    float wet_in = (inl_gained + inr_gained) * 0.5f; // No Send amount, just mix in
     float old_samp = buffer[write_pos];
     
     buffer[write_pos] = fclamp(wet_in + (old_samp * fbk), -1.0f, 1.0f);
     
+    // --- GRAIN LEFT ---
     if(grain_trig_counter_l == 0)
     {
         float size_mod = (1.0f - stereo) + (rand_.Process() * stereo);
         uint32_t size_samps = (uint32_t)(effective_params[PARAM_GRAIN_SIZE] * sample_rate_ * size_mod);
+
+        // SPRAY LOGIC (Backwards)
+        // Window up to 500ms based on Spray param
+        float spray_window = spray * 0.5f * sample_rate_; 
+        float rnd_offset = rand_.Process() * spray_window;
+        
+        float start_pos = (float)write_pos - rnd_offset;
+        
         for(int i = 0; i < MAX_GRAINS; i++)
         {
             if(!grains_l[i].active)
             {
-                grains_l[i].Start(write_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_);
+                grains_l[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples);
                 break;
             }
         }
@@ -351,15 +368,21 @@ void Processing::GetSample(float &outl, float &outr, float inl, float inr)
     }
     grain_trig_counter_l--;
     
+    // --- GRAIN RIGHT ---
     if(grain_trig_counter_r == 0)
     {
         float size_mod = (1.0f - stereo) + (rand_.Process() * stereo);
         uint32_t size_samps = (uint32_t)(effective_params[PARAM_GRAIN_SIZE] * sample_rate_ * size_mod);
+
+        float spray_window = spray * 0.5f * sample_rate_; 
+        float rnd_offset = rand_.Process() * spray_window;
+        float start_pos = (float)write_pos - rnd_offset;
+        
         for(int i = 0; i < MAX_GRAINS; i++)
         {
             if(!grains_r[i].active)
             {
-                grains_r[i].Start(write_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_);
+                grains_r[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples);
                 break;
             }
         }
@@ -376,6 +399,7 @@ void Processing::GetSample(float &outl, float &outr, float inl, float inr)
     }
     wet_l *= 0.5f; 
     wet_r *= 0.5f;
+    
     write_pos++;
     if(write_pos >= buffer_len_samples)
         write_pos = 0;

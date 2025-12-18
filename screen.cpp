@@ -10,13 +10,11 @@ using daisy::OledDisplay;
 static daisy::OledDisplay<daisy::SSD130xI2c128x64Driver> display;
 
 // --- CONSTANTS FOR LAYOUT ---
-// Total screen width: 128px
-// Selector: 3px | Name: ~57px | Bar: 64px (50%)
 const int kSelectorColX = 0;
 const int kTextColX     = 5;
 const int kTextColWidth = 55; 
 const int kBarColX      = 64; 
-const int kBarColWidth  = 64; // Exactly 50% of screen width
+const int kBarColWidth  = 64; 
 
 // --- LOW-LEVEL DRAWING HELPERS ---
 static void DrawCharRot180(OledDisplay<OledDriver> &disp, int x, int y, char ch, const FontDef &font, bool on)
@@ -48,7 +46,6 @@ static void DrawSelectionIndicator(int y, bool engaged)
     int ry_start = display.Height() - 1 - (y + 9);
     int ry_end = display.Height() - 1 - y;
     
-    // Slim | selector
     display.DrawLine(rx, ry_start, rx, ry_end, true);
     if (engaged) display.DrawLine(rx + 2, ry_start, rx + 2, ry_end, true);
 }
@@ -66,10 +63,12 @@ static float GetNormVal(int param_id, float val, int division_idx)
     switch(param_id) {
         case PARAM_PRE_GAIN:
         case PARAM_POST_GAIN:
-        case PARAM_SEND:
+        // PARAM_SEND Removed
         case PARAM_FEEDBACK:
         case PARAM_MIX:
-        case PARAM_STEREO: norm = val; break;
+        case PARAM_STEREO: 
+        case PARAM_SPRAY:
+            norm = val; break;
         case PARAM_BPM: norm = (val - 20.f) / (300.f - 20.f); break;
         case PARAM_DIVISION: norm = (float)division_idx / 3.0f; break;
         case PARAM_PITCH: {
@@ -78,7 +77,7 @@ static float GetNormVal(int param_id, float val, int division_idx)
             break;
         }
         case PARAM_GRAIN_SIZE: norm = (val - 0.002f) / (0.5f - 0.002f); break;
-        case PARAM_GRAIN_DENSITY: norm = (val - 0.5f) / (50.f - 0.5f); break;
+        case PARAM_GRAINS: norm = (val - 0.5f) / (50.f - 0.5f); break;
     }
     return (norm < 0.0f) ? 0.0f : (norm > 1.0f ? 1.0f : norm);
 }
@@ -151,12 +150,13 @@ void Screen::DrawStatus(Processing &proc)
             } else {
                 switch(item.param_id) {
                     case PARAM_PRE_GAIN: case PARAM_POST_GAIN: snprintf(value_str, 16, "%d%%", (int)(v_b * 200.f)); break;
-                    case PARAM_MIX: case PARAM_FEEDBACK: case PARAM_SEND: case PARAM_STEREO: snprintf(value_str, 16, "%d%%", (int)(v_b * 100.f)); break;
+                    case PARAM_MIX: case PARAM_FEEDBACK: case PARAM_STEREO: snprintf(value_str, 16, "%d%%", (int)(v_b * 100.f)); break;
+                    case PARAM_SPRAY: snprintf(value_str, 16, "%d%%", (int)(v_b * 100.f)); break; // Spray as %
                     case PARAM_BPM: snprintf(value_str, 16, "%d", (int)v_b); break;
                     case PARAM_DIVISION: snprintf(value_str, 16, "1/%d", (int)v_b); break;
                     case PARAM_PITCH: { float st = 12.f * log2f(v_b); snprintf(value_str, 16, "%+d.%dst", (int)st, (int)(fabsf(st*10.f))%10); break; }
                     case PARAM_GRAIN_SIZE: snprintf(value_str, 16, "%dms", (int)(v_b * 1000.f)); break;
-                    case PARAM_GRAIN_DENSITY: snprintf(value_str, 16, "%dHz", (int)v_b); break;
+                    case PARAM_GRAINS: snprintf(value_str, 16, "%dHz", (int)v_b); break;
                 }
                 n_base = GetNormVal(item.param_id, v_b, proc.division_idx);
                 n_eff  = GetNormVal(item.param_id, v_e, proc.division_idx);

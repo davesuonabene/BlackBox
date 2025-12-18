@@ -10,7 +10,7 @@ using namespace daisysp;
 enum Param
 {
     PARAM_PRE_GAIN,
-    PARAM_SEND,
+    // PARAM_SEND Removed
     PARAM_FEEDBACK,
     PARAM_MIX,
     PARAM_POST_GAIN,
@@ -18,7 +18,8 @@ enum Param
     PARAM_DIVISION,
     PARAM_PITCH,
     PARAM_GRAIN_SIZE,
-    PARAM_GRAIN_DENSITY,
+    PARAM_GRAINS, // Formerly DENSITY
+    PARAM_SPRAY,  // New Parameter
     PARAM_STEREO,
     PARAM_MAP_AMT, 
     PARAM_COUNT
@@ -51,6 +52,8 @@ extern const MenuItem kMenuBpmEdit[];
 extern const int kMenuBpmEditSize;
 extern const MenuItem kMenuPostEdit[];
 extern const int kMenuPostEditSize;
+extern const MenuItem kMenuGrainsEdit[];
+extern const int kMenuGrainsEditSize;
 extern const MenuItem kMenuGenericEdit[];
 extern const int kMenuGenericEditSize;
 
@@ -58,7 +61,7 @@ extern const int kMenuGenericEditSize;
 // --- Processing Struct ---
 struct Processing
 {
-    // Nested struct for Grain (Unchanged)
+    // Nested struct for Grain
     struct Grain
     {
         inline float TriEnv(float pos)
@@ -72,15 +75,22 @@ struct Processing
         float    env_pos;
         float    env_inc;
         uint32_t size_samples;
-        void Start(float start_pos, float pitch, uint32_t size_samps, float sample_rate)
+
+        void Start(float start_pos, float pitch, uint32_t size_samps, float sample_rate, size_t buffer_len)
         {
             active       = true;
+            
+            // Wrap start_pos
+            while(start_pos < 0.0f) start_pos += (float)buffer_len;
+            while(start_pos >= (float)buffer_len) start_pos -= (float)buffer_len;
+
             read_pos     = start_pos;
             increment    = pitch;
             size_samples = size_samps < 4 ? 4 : size_samps;
             env_pos      = 0.0f;
             env_inc      = 1.0f / (float)size_samples;
         }
+
         float Process(float *buffer, size_t buffer_len)
         {
             if(!active) return 0.0f;
@@ -145,7 +155,7 @@ struct Processing
     int             view_top_item_idx = 0; 
 
     int             edit_param_target = 0; 
-    char            parent_menu_name[16]; // For Footer display
+    char            parent_menu_name[16]; 
     
     // --- Encoder Hold State ---
     const uint32_t  kHoldTimeMs = 500; 
