@@ -1,4 +1,3 @@
-// Glue main: use modules
 #include "config.h"
 #include "hw.h"
 #include "screen.h"
@@ -11,7 +10,6 @@ static Hardware   g_hw;
 static Screen     g_screen;
 static Processing g_proc;
 
-
 void AudioCallback(AudioHandle::InputBuffer  in,
                    AudioHandle::OutputBuffer out,
                    size_t                    size)
@@ -23,9 +21,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         float in_l = in[0][i];
         float in_r = in[1][i];
 
-        // --- 1. Playback / Resampling Source ---
-        // If Playing OR Recording (Resampling), we read the ACTIVE buffer.
-        // We do this if there IS an active loop (loop_length > 0).
+        // Sum active loop to input before processing for resampling
         bool should_play = (g_hw.looper_mode == Hardware::LP_PLAYING) || 
                            (g_hw.looper_mode == Hardware::LP_RECORDING && g_hw.loop_length > 0);
 
@@ -36,19 +32,13 @@ void AudioCallback(AudioHandle::InputBuffer  in,
                 in_l += g_hw.active_buffer[g_hw.play_pos * 2];
                 in_r += g_hw.active_buffer[g_hw.play_pos * 2 + 1];
             }
-            
-            // Advance Play Head (Looping)
             g_hw.play_pos++;
-            if (g_hw.play_pos >= g_hw.loop_length) 
-                g_hw.play_pos = 0;
+            if (g_hw.play_pos >= g_hw.loop_length) g_hw.play_pos = 0;
         }
 
-        // --- 2. Process Audio (Grain Engine) ---
-        // in_l/in_r now contains (Input + OldLoop), feeding the Grains
         g_proc.GetSample(out[0][i], out[1][i], in_l, in_r);
 
-        // --- 3. Record Output (New Loop) ---
-        // We write to REC buffer.
+        // Record output to rec_buffer (New Loop)
         if (g_hw.looper_mode == Hardware::LP_RECORDING && g_hw.rec_buffer != nullptr)
         {
             if (g_hw.rec_pos < (LOOPER_MAX_SAMPLES / 2))
@@ -59,7 +49,6 @@ void AudioCallback(AudioHandle::InputBuffer  in,
             }
             else
             {
-                // Buffer Full -> Auto Stop & Switch
                 g_hw.SwitchToNewLoop();
                 g_hw.looper_mode = Hardware::LP_PLAYING;
             }
@@ -76,13 +65,10 @@ int main(void)
     g_hw.seed.StartAudio(AudioCallback);
 
     uint32_t last_ui_update = 0;
-    const uint32_t ui_interval_ms = 33; 
-
     while(1)
     {
         uint32_t now = System::GetNow();
-
-        if(now - last_ui_update >= ui_interval_ms)
+        if(now - last_ui_update >= 33) 
         {
             last_ui_update = now;
             g_screen.DrawStatus(g_proc, g_hw);

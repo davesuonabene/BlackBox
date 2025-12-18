@@ -10,7 +10,6 @@ using namespace daisysp;
 enum Param
 {
     PARAM_PRE_GAIN,
-    // PARAM_SEND Removed
     PARAM_FEEDBACK,
     PARAM_MIX,
     PARAM_POST_GAIN,
@@ -18,34 +17,30 @@ enum Param
     PARAM_DIVISION,
     PARAM_PITCH,
     PARAM_GRAIN_SIZE,
-    PARAM_GRAINS, // Formerly DENSITY
-    PARAM_SPRAY,  // New Parameter
+    PARAM_GRAINS, 
+    PARAM_SPRAY,  
     PARAM_STEREO,
     PARAM_MAP_AMT, 
     PARAM_COUNT
 };
 
-// --- Menu Item Definitions ---
-
 enum MenuItemType
 {
-    TYPE_PARAM,           // Editable parameter (Hold -> Generic Edit)
-    TYPE_SUBMENU,         // Enters a submenu
-    TYPE_PARAM_SUBMENU,   // Editable param (Hold -> Specific Edit)
-    TYPE_BACK             // Goes up one menu level
+    TYPE_PARAM,           
+    TYPE_SUBMENU,         
+    TYPE_PARAM_SUBMENU,   
+    TYPE_BACK             
 };
 
 struct MenuItem
 {
     const char* name;
     MenuItemType type;
-
     int param_id;             
     const MenuItem* submenu;  
     int num_children; 
 };
 
-// --- Menu Tree Declarations ---
 extern const MenuItem kMenuMain[];
 extern const int kMenuMainSize;
 extern const MenuItem kMenuBpmEdit[];
@@ -57,11 +52,8 @@ extern const int kMenuGrainsEditSize;
 extern const MenuItem kMenuGenericEdit[];
 extern const int kMenuGenericEditSize;
 
-
-// --- Processing Struct ---
 struct Processing
 {
-    // Nested struct for Grain
     struct Grain
     {
         inline float TriEnv(float pos)
@@ -79,11 +71,8 @@ struct Processing
         void Start(float start_pos, float pitch, uint32_t size_samps, float sample_rate, size_t buffer_len)
         {
             active       = true;
-            
-            // Wrap start_pos
             while(start_pos < 0.0f) start_pos += (float)buffer_len;
             while(start_pos >= (float)buffer_len) start_pos -= (float)buffer_len;
-
             read_pos     = start_pos;
             increment    = pitch;
             size_samples = size_samps < 4 ? 4 : size_samps;
@@ -108,6 +97,7 @@ struct Processing
             return samp * amp;
         }
     };
+
     struct Rand
     {
         uint32_t seed_ = 1;
@@ -118,18 +108,12 @@ struct Processing
         }
     };
 
-    enum UiState
-    {
-        STATE_MENU_NAV,   
-        STATE_PARAM_EDIT  
-    };
+    enum UiState { STATE_MENU_NAV, STATE_PARAM_EDIT };
 
-    // Buffer
     static float    DSY_SDRAM_BSS buffer[MAX_BUFFER_SAMPLES];
     uint32_t        write_pos         = 0;
     uint32_t        buffer_len_samples = 48000;
 
-    // Grains
     static Grain    grains_l[MAX_GRAINS];
     static Grain    grains_r[MAX_GRAINS];
     uint32_t        grain_trig_counter_l = 0;
@@ -137,17 +121,15 @@ struct Processing
     uint32_t        grain_trig_interval_l = 2400; 
     uint32_t        grain_trig_interval_r = 2400; 
 
-    // --- DSP & Mapping State ---
-    float           params[PARAM_COUNT];           // Base values
-    float           knob_map_amounts[PARAM_COUNT]; // Mapping %
-    float           effective_params[PARAM_COUNT]; // Final values
+    float           params[PARAM_COUNT];           
+    float           knob_map_amounts[PARAM_COUNT]; 
+    float           effective_params[PARAM_COUNT]; 
     
     int             division_idx = 0; 
     const int       division_vals[4] = {1, 2, 4, 8}; 
     float           sample_rate_ = 48000.0f;
     Rand            rand_;
     
-    // --- UI State Variables ---
     UiState         ui_state = STATE_MENU_NAV;
     const MenuItem* current_menu = kMenuMain; 
     int             current_menu_size = kMenuMainSize;
@@ -157,13 +139,13 @@ struct Processing
     int             edit_param_target = 0; 
     char            parent_menu_name[16]; 
     
-    // --- Encoder Hold State ---
     const uint32_t  kHoldTimeMs = 500; 
     bool            enc_is_holding = false;
     uint32_t        enc_hold_start = 0;
 
-    // --- Button Debounce/State ---
-    uint32_t        last_looper_toggle = 0; // Fix: Cooldown timer
+    // --- Button State Machine (Zero Latency) ---
+    uint32_t        last_press_time = 0; 
+    bool            long_press_active = false; 
     bool            trigger_blink = false;
 
     void Init(Hardware &hw);

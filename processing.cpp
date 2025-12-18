@@ -7,9 +7,7 @@
 using namespace daisy;
 using namespace daisysp;
 
-// ... [Menu Definitions Omitted for Brevity - Unchanged] ...
-// (Assume standard Menu Definitions here as per previous files)
-
+// --- Menu Tree Definition ---
 const MenuItem kMenuGenericEdit[] = { {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, {"< Back", TYPE_BACK, 0, kMenuMain, 0} };
 const int kMenuGenericEditSize = sizeof(kMenuGenericEdit) / sizeof(kMenuGenericEdit[0]);
 const MenuItem kMenuPostEdit[] = { {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}, {"< Back", TYPE_BACK, 0, kMenuMain, 0}, {"Pre", TYPE_PARAM, PARAM_PRE_GAIN, nullptr, 0} };
@@ -21,7 +19,6 @@ const int kMenuGrainsEditSize = sizeof(kMenuGrainsEdit) / sizeof(kMenuGrainsEdit
 const MenuItem kMenuMain[] = { {"Post", TYPE_PARAM_SUBMENU, PARAM_POST_GAIN, kMenuPostEdit, kMenuPostEditSize}, {"Fbk", TYPE_PARAM, PARAM_FEEDBACK, nullptr, 0}, {"Mix", TYPE_PARAM, PARAM_MIX, nullptr, 0}, {"BPM", TYPE_PARAM_SUBMENU, PARAM_BPM, kMenuBpmEdit, kMenuBpmEditSize}, {"Pitch", TYPE_PARAM, PARAM_PITCH, nullptr, 0}, {"Size", TYPE_PARAM, PARAM_GRAIN_SIZE, nullptr, 0}, {"Grains", TYPE_PARAM_SUBMENU, PARAM_GRAINS, kMenuGrainsEdit, kMenuGrainsEditSize} };
 const int kMenuMainSize = sizeof(kMenuMain) / sizeof(kMenuMain[0]);
 
-// --- Static Member Definitions ---
 float DSY_SDRAM_BSS Processing::buffer[MAX_BUFFER_SAMPLES];
 Processing::Grain Processing::grains_l[MAX_GRAINS];
 Processing::Grain Processing::grains_r[MAX_GRAINS];
@@ -30,19 +27,15 @@ void Processing::Init(Hardware &hw)
 {
     memset(buffer, 0, MAX_BUFFER_SAMPLES * sizeof(float));
     sample_rate_ = hw.sample_rate;
-
-    // Params Init
     params[PARAM_PRE_GAIN] = 0.5f; params[PARAM_FEEDBACK] = 0.5f; params[PARAM_MIX] = 0.5f;
     params[PARAM_POST_GAIN] = 0.5f; params[PARAM_BPM] = 120.0f; params[PARAM_DIVISION] = 1.0f; 
     params[PARAM_PITCH] = 1.0f; params[PARAM_GRAIN_SIZE] = 0.1f; params[PARAM_GRAINS] = 10.0f; 
     params[PARAM_SPRAY] = 0.0f; params[PARAM_STEREO] = 0.0f;
-
     for(int i=0; i<PARAM_COUNT; i++) { knob_map_amounts[i] = 0.0f; effective_params[i] = params[i]; }
     snprintf(parent_menu_name, sizeof(parent_menu_name), " ");
     division_idx = 0; params[PARAM_DIVISION] = (float)division_vals[division_idx];
-
-    // Button Init
-    last_button_press_time = 0;
+    
+    last_press_time = 0;
     long_press_active = false;
 
     UpdateBufferLen();
@@ -51,7 +44,7 @@ void Processing::Init(Hardware &hw)
 
 void Processing::Controls(Hardware &hw)
 {
-    // Potentiometer & Param Logic (Unchanged)
+    // --- Potentiometer Logic ---
     hw.pot.Process();
     float pot_val = hw.pot.Value();
     for (int i = 0; i < PARAM_COUNT; i++) {
@@ -68,56 +61,55 @@ void Processing::Controls(Hardware &hw)
     }
     UpdateBufferLen(); 
 
-    // --- Button Logic ---
+    // --- Immediate Action Button Logic ---
     hw.button.Debounce();
     bool btn_pressed = hw.button.Pressed();
     bool btn_rising  = hw.button.RisingEdge();
     uint32_t now = System::GetNow();
 
     // 1. Hold to Clear
-    if(btn_pressed && !long_press_active) {
-        if(hw.button.TimeHeldMs() > 1000) {
-            hw.Reset(); // Clears everything
-            long_press_active = true; 
-            trigger_blink = true;
-        }
+    if(btn_pressed && !long_press_active && hw.button.TimeHeldMs() > 1000) {
+        hw.Reset(); 
+        long_press_active = true; 
+        trigger_blink = true;
     }
     if(!btn_pressed) long_press_active = false;
 
-    // 2. Taps
-    if(btn_rising) {
-        if(now - last_button_press_time < 400) {
-            // DOUBLE TAP -> STOP
-            hw.looper_mode = Hardware::LP_STOPPED;
+    // 2. Transport Logic (Triggers on Press)
+    if (btn_rising && !long_press_active) {
+        // Debounce Filter: Ignore presses within 50ms of the last one
+        if (now - last_press_time > 50) {
             trigger_blink = true;
+
+            // Double Tap Detection: If pressed again within 300ms, force STOP
+            if (now - last_press_time < 300) {
+                hw.looper_mode = Hardware::LP_STOPPED;
+            } 
+            else {
+                // Single Tap State Transitions
+                if (hw.looper_mode == Hardware::LP_EMPTY) {
+                    hw.looper_mode = Hardware::LP_RECORDING;
+                    hw.rec_pos = 0;
+                } 
+                else if (hw.looper_mode == Hardware::LP_RECORDING) {
+                    hw.SwitchToNewLoop(); 
+                    hw.looper_mode = Hardware::LP_PLAYING;
+                } 
+                else if (hw.looper_mode == Hardware::LP_PLAYING) {
+                    hw.looper_mode = Hardware::LP_RECORDING;
+                    hw.rec_pos = 0;
+                }
+                else if (hw.looper_mode == Hardware::LP_STOPPED) {
+                    // NEW: Play from start when resuming from stop
+                    hw.play_pos = 0; 
+                    hw.looper_mode = Hardware::LP_PLAYING;
+                }
+            }
+            last_press_time = now;
         }
-        else {
-            // SINGLE TAP -> Transport
-            trigger_blink = true;
-            if (hw.looper_mode == Hardware::LP_EMPTY) {
-                // Start Recording (Fresh)
-                hw.looper_mode = Hardware::LP_RECORDING;
-                hw.rec_pos = 0; 
-            }
-            else if (hw.looper_mode == Hardware::LP_RECORDING) {
-                // Stop Recording -> Play (Swap Buffers)
-                hw.SwitchToNewLoop();
-                hw.looper_mode = Hardware::LP_PLAYING;
-            }
-            else if (hw.looper_mode == Hardware::LP_PLAYING) {
-                // Start Recording (Resample into NEW buffer)
-                hw.looper_mode = Hardware::LP_RECORDING;
-                hw.rec_pos = 0; // Start new buffer from scratch
-            }
-            else if (hw.looper_mode == Hardware::LP_STOPPED) {
-                hw.looper_mode = Hardware::LP_PLAYING;
-            }
-        }
-        last_button_press_time = now;
     }
 
-    // Encoder Logic (Unchanged) ...
-    // [Keeping existing encoder code from previous artifact]
+    // --- Encoder Logic ---
     hw.encoder.Debounce();
     int32_t inc = hw.encoder.Increment();
     if(hw.encoder.RisingEdge()) { enc_hold_start = System::GetNow(); enc_is_holding = true; }
@@ -162,133 +154,58 @@ void Processing::Controls(Hardware &hw)
                     case PARAM_PITCH: val = 12.0f * log2f(val); val += (delta * 100.0f); val = fclamp(val, -24.0f, 24.0f); params[param_id] = powf(2.0f, val / 12.0f); break;
                     case PARAM_GRAIN_SIZE: { float vel_mod = fminf((float)abs(inc) * 0.5f, 5.0f); float fine_delta = (inc > 0 ? 1.0f : -1.0f) * (0.001f + (0.005f * vel_mod)); params[param_id] = fclamp(val + fine_delta, 0.002f, 0.5f); } break;
                     case PARAM_GRAINS: params[param_id] = fclamp(val + (delta * 10.0f), 0.5f, 50.0f); UpdateGrainParams(); break;
-                    default: break;
                 }
             }
         }
     }
 }
 
-// --- Audio Functions ---
-void Processing::UpdateBufferLen()
-{
-    float bpm       = effective_params[PARAM_BPM];
-    float division  = params[PARAM_DIVISION]; 
-    float beats_per_sec = bpm / 60.0f;
-    float beat_len_sec  = 1.0f / beats_per_sec;
-    float loop_len_sec  = beat_len_sec * (4.0f / division);
-    
+void Processing::UpdateBufferLen() {
+    float bpm = effective_params[PARAM_BPM]; float division = params[PARAM_DIVISION]; 
+    float loop_len_sec = (1.0f / (bpm / 60.0f)) * (4.0f / division);
     buffer_len_samples = (uint32_t)(loop_len_sec * sample_rate_);
-    if(buffer_len_samples > MAX_BUFFER_SAMPLES)
-        buffer_len_samples = MAX_BUFFER_SAMPLES;
-    if(buffer_len_samples < 4) 
-        buffer_len_samples = 4;
-        
-    // Reset write head if it's outside the new buffer length
+    if(buffer_len_samples > MAX_BUFFER_SAMPLES) buffer_len_samples = MAX_BUFFER_SAMPLES;
+    if(buffer_len_samples < 4) buffer_len_samples = 4;
     if(write_pos >= buffer_len_samples) write_pos = 0;
 }
 
-void Processing::UpdateGrainParams()
-{
-    float density_hz = effective_params[PARAM_GRAINS];
-    float stereo_amt = effective_params[PARAM_STEREO];
-    if(density_hz < 0.1f) density_hz = 0.1f;
-    float base_interval = sample_rate_ / density_hz;
-    
-    float l_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
-    float r_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
-    grain_trig_interval_l = (uint32_t)(base_interval * l_rand);
-    grain_trig_interval_r = (uint32_t)(base_interval * r_rand);
-    if(grain_trig_interval_l == 0) grain_trig_interval_l = 1;
-    if(grain_trig_interval_r == 0) grain_trig_interval_r = 1;
+void Processing::UpdateGrainParams() {
+    float density_hz = effective_params[PARAM_GRAINS]; float stereo_amt = effective_params[PARAM_STEREO];
+    if(density_hz < 0.1f) density_hz = 0.1f; float base_interval = sample_rate_ / density_hz;
+    float l_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt); float r_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
+    grain_trig_interval_l = (uint32_t)(base_interval * l_rand); grain_trig_interval_r = (uint32_t)(base_interval * r_rand);
+    if(grain_trig_interval_l == 0) grain_trig_interval_l = 1; if(grain_trig_interval_r == 0) grain_trig_interval_r = 1;
 }
 
-void Processing::GetSample(float &outl, float &outr, float inl, float inr)
-{
-    float pre_gain  = effective_params[PARAM_PRE_GAIN] * 2.0f; 
-    // Send removed
-    float fbk       = effective_params[PARAM_FEEDBACK];
-    float mix       = effective_params[PARAM_MIX];
-    float post_gain = effective_params[PARAM_POST_GAIN] * 2.0f;
-    float stereo    = effective_params[PARAM_STEREO];
-    float spray     = effective_params[PARAM_SPRAY];
-    
-    float inl_gained = inl * pre_gain;
-    float inr_gained = inr * pre_gain;
-    
+void Processing::GetSample(float &outl, float &outr, float inl, float inr) {
+    float pre_gain = effective_params[PARAM_PRE_GAIN] * 2.0f; float fbk = effective_params[PARAM_FEEDBACK];
+    float mix = effective_params[PARAM_MIX]; float post_gain = effective_params[PARAM_POST_GAIN] * 2.0f;
+    float stereo = effective_params[PARAM_STEREO]; float spray = effective_params[PARAM_SPRAY];
+    float inl_gained = inl * pre_gain; float inr_gained = inr * pre_gain;
     float wet_in = (inl_gained + inr_gained) * 0.5f; 
     float old_samp = buffer[write_pos];
-    
     buffer[write_pos] = fclamp(wet_in + (old_samp * fbk), -1.0f, 1.0f);
     
-    // --- GRAIN LEFT ---
-    if(grain_trig_counter_l == 0)
-    {
+    if(grain_trig_counter_l == 0) {
         float size_mod = (1.0f - stereo) + (rand_.Process() * stereo);
         uint32_t size_samps = (uint32_t)(effective_params[PARAM_GRAIN_SIZE] * sample_rate_ * size_mod);
+        float start_pos = (float)write_pos - (rand_.Process() * spray * 0.5f * sample_rate_);
+        for(int i = 0; i < MAX_GRAINS; i++) { if(!grains_l[i].active) { grains_l[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples); break; } }
+        UpdateGrainParams(); grain_trig_counter_l = grain_trig_interval_l;
+    } grain_trig_counter_l--;
 
-        float spray_window = spray * 0.5f * sample_rate_; 
-        float rnd_offset = rand_.Process() * spray_window;
-        
-        float start_pos = (float)write_pos - rnd_offset;
-        
-        for(int i = 0; i < MAX_GRAINS; i++)
-        {
-            if(!grains_l[i].active)
-            {
-                // ADDED buffer_len_samples (5th argument)
-                grains_l[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples);
-                break;
-            }
-        }
-        UpdateGrainParams(); 
-        grain_trig_counter_l = grain_trig_interval_l;
-    }
-    grain_trig_counter_l--;
-    
-    // --- GRAIN RIGHT ---
-    if(grain_trig_counter_r == 0)
-    {
+    if(grain_trig_counter_r == 0) {
         float size_mod = (1.0f - stereo) + (rand_.Process() * stereo);
         uint32_t size_samps = (uint32_t)(effective_params[PARAM_GRAIN_SIZE] * sample_rate_ * size_mod);
-
-        float spray_window = spray * 0.5f * sample_rate_; 
-        float rnd_offset = rand_.Process() * spray_window;
-        float start_pos = (float)write_pos - rnd_offset;
-        
-        for(int i = 0; i < MAX_GRAINS; i++)
-        {
-            if(!grains_r[i].active)
-            {
-                // ADDED buffer_len_samples (5th argument)
-                grains_r[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples);
-                break;
-            }
-        }
+        float start_pos = (float)write_pos - (rand_.Process() * spray * 0.5f * sample_rate_);
+        for(int i = 0; i < MAX_GRAINS; i++) { if(!grains_r[i].active) { grains_r[i].Start(start_pos, effective_params[PARAM_PITCH], size_samps, sample_rate_, buffer_len_samples); break; } }
         grain_trig_counter_r = grain_trig_interval_r;
-    }
-    grain_trig_counter_r--;
-    
-    float wet_l = 0.0f;
-    float wet_r = 0.0f;
-    for(int i = 0; i < MAX_GRAINS; i++)
-    {
-        wet_l += grains_l[i].Process(buffer, buffer_len_samples);
-        wet_r += grains_r[i].Process(buffer, buffer_len_samples);
-    }
-    wet_l *= 0.5f; 
-    wet_r *= 0.5f;
-    
-    write_pos++;
-    if(write_pos >= buffer_len_samples)
-        write_pos = 0;
-    
-    float dry_l = inl_gained * (1.0f - mix);
-    float dry_r = inr_gained * (1.0f - mix);
-    
-    float wet_l_mixed = wet_l * mix;
-    float wet_r_mixed = wet_r * mix;
-    
-    outl = (dry_l + wet_l_mixed) * post_gain;
-    outr = (dry_r + wet_r_mixed) * post_gain;
+    } grain_trig_counter_r--;
+
+    float wet_l = 0.0f; float wet_r = 0.0f;
+    for(int i = 0; i < MAX_GRAINS; i++) { wet_l += grains_l[i].Process(buffer, buffer_len_samples); wet_r += grains_r[i].Process(buffer, buffer_len_samples); }
+    wet_l *= 0.5f; wet_r *= 0.5f;
+    write_pos++; if(write_pos >= buffer_len_samples) write_pos = 0;
+    float dry_l = inl_gained * (1.0f - mix); float dry_r = inr_gained * (1.0f - mix);
+    outl = (dry_l + wet_l * mix) * post_gain; outr = (dry_r + wet_r * mix) * post_gain;
 }
