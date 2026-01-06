@@ -24,8 +24,6 @@ static void DrawRectRot180(OledDisplay<OledDriver> &disp, int x, int y, int w, i
     }
 }
 
-// Draw String with optional background inversion
-// v_padding: Adds pixels to top and bottom of the background rect
 static void DrawStringRot180(OledDisplay<OledDriver> &disp, int x, int y, const char *str, const FontDef &font, bool on, bool invert_bg, bool full_width = false, int h_padding = 1, int v_padding = 0)
 {
     int str_w = 0;
@@ -35,12 +33,9 @@ static void DrawStringRot180(OledDisplay<OledDriver> &disp, int x, int y, const 
     if (invert_bg)
     {
         int bg_x, bg_y, bg_w, bg_h;
-
-        // Vertical Calculation
         bg_y = y - v_padding;
         bg_h = font.FontHeight + (v_padding * 2);
 
-        // Horizontal Calculation
         if (full_width)
         {
             bg_x = 0;
@@ -52,10 +47,7 @@ static void DrawStringRot180(OledDisplay<OledDriver> &disp, int x, int y, const 
             bg_w = str_w + (h_padding * 2);
         }
 
-        // Draw background
         DrawRectRot180(disp, bg_x, bg_y, bg_w, bg_h, on);
-        
-        // Text color is inverted
         on = !on;
     }
 
@@ -167,8 +159,8 @@ void Screen::DrawStatus(Processing& proc)
                 bool sel = (i == proc.root_cursor);
                 int y = start_y + i * item_h;
                 
-                snprintf(line, sizeof(line), " %s", proc.nodes[i].name);
-                // v_padding = 2 -> Total height 10+4 = 14px
+                // USE POINTER SYNTAX: proc.nodes[i]->name
+                snprintf(line, sizeof(line), " %s", proc.nodes[i]->name);
                 DrawStringRot180(display, 0, y, line, Font_7x10, true, sel, true, 1, 2); 
             }
         }
@@ -176,10 +168,10 @@ void Screen::DrawStatus(Processing& proc)
     // --- 2. NODE PARAMETER VIEW ---
     else
     {
-        auto& node = proc.nodes[proc.current_node_idx];
+        // USE POINTER SYNTAX
+        NodeBase* node = proc.nodes[proc.current_node_idx];
         
         // Header
-        // Using v_padding=2 gives it a boxy look if highlighted
         if(proc.advanced_mode) {
              if(proc.adv_cursor == -1) DrawStringRot180(display, 0, 0, " < BACK", Font_7x10, true, true, true, 1, 2);
              else DrawStringRot180(display, 0, 0, " ADVANCED", Font_7x10, true, false);
@@ -188,7 +180,7 @@ void Screen::DrawStatus(Processing& proc)
         } else if(proc.edit_state) {
              DrawStringRot180(display, 0, 0, " EDITING", Font_7x10, true, false);
         } else {
-             snprintf(line, sizeof(line), " %s", node.name);
+             snprintf(line, sizeof(line), " %s", node->name);
              DrawStringRot180(display, 0, 0, line, Font_7x10, true, false);
         }
 
@@ -199,13 +191,12 @@ void Screen::DrawStatus(Processing& proc)
 
         if (proc.advanced_mode)
         {
-            auto parent = node.params[proc.viewing_param];
+            auto parent = node->params[proc.viewing_param];
             
             // Map Row
             bool sel_map = (proc.adv_cursor == 0);
-            int pct = (int)(node.map_amounts[proc.viewing_param] * 100.0f);
+            int pct = (int)(node->map_amounts[proc.viewing_param] * 100.0f);
             
-            // Text Y + 2 for centering relative to 12px row
             int y_text_map = y_list_start + 2;
 
             snprintf(line, sizeof(line), " Map Amt");
@@ -217,11 +208,9 @@ void Screen::DrawStatus(Processing& proc)
             // Child Row
             if (parent.has_child)
             {
-                auto child = node.params[parent.child_id];
+                auto child = node->params[parent.child_id];
                 bool sel_child = (proc.adv_cursor == 1);
                 int y_child = y_list_start + row_h;
-                
-                // Text Y + 2 for centering
                 int y_text_child = y_child + 2;
 
                 snprintf(line, sizeof(line), " %s", child.name);
@@ -234,21 +223,18 @@ void Screen::DrawStatus(Processing& proc)
         else
         {
             // Normal List
-            for(int i=0; i<node.param_count; i++)
+            for(int i=0; i<node->param_count; i++)
             {
                 int y = y_list_start + (i * row_h);
                 bool is_sel = (i == proc.param_cursor);
-                
-                // Text Y + 2 for centering relative to Bar/Row
                 int y_text = y + 2;
 
-                snprintf(line, sizeof(line), " %s", node.params[i].name);
-                // v_padding = 2 -> Total height 8+4 = 12px
+                snprintf(line, sizeof(line), " %s", node->params[i].name);
                 DrawStringRot180(display, 2, y_text, line, Font_6x8, true, is_sel, false, 2, 2);
                 
                 DrawBarModRot180(display, 50, y + bar_y_off, 70, bar_h, 
-                                 node.params[i].base_value, 
-                                 node.params[i].effective_value, true);
+                                 node->params[i].base_value, 
+                                 node->params[i].effective_value, true);
             }
         }
     }
