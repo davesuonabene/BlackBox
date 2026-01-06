@@ -1,7 +1,5 @@
 #pragma once
 
-// Set max buffer time to 2 seconds @ 48kHz
-#define MAX_BUFFER_SAMPLES static_cast<size_t>(48000 * 2.0f)
-
-// Max grains to play simultaneously
-#define MAX_GRAINS 8
+// Minimal Configuration
+// Max interval between taps for tempo detection (in ms) - kept for potential future use
+#define MAX_TAP_INTERVAL 2000

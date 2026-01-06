@@ -3,7 +3,7 @@
 #include "dev/oled_ssd130x.h"
 #include "util/oled_fonts.h"
 #include "daisy_seed.h"
-#include "processing.h" 
+#include "processing.h"
 
 using OledDriver = daisy::SSD130xI2c128x64Driver;
 
@@ -13,9 +13,7 @@ struct Screen
     uint32_t blink_start  = 0;
 
     void Init(daisy::DaisySeed &seed);
-
     void Blink(uint32_t now);
 
-    // Passed Hardware to access Looper state
-    void DrawStatus(Processing &proc, Hardware &hw); 
+    void DrawStatus(Processing& proc);
 };

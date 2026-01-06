@@ -1,290 +1,233 @@
 #include "processing.h"
-#include <string.h> 
-#include <math.h>   
-#include <stdlib.h> 
-#include <cstdio> 
-
+#include <cstdio>
 using namespace daisy;
 using namespace daisysp;
 
-// --- Menu Tree Definition ---
-const MenuItem kMenuGenericEdit[] = {
-    {"BACK",    TYPE_BACK,  0,             kMenuMain, 0},
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT, nullptr, 0}
-};
-const int kMenuGenericEditSize = sizeof(kMenuGenericEdit) / sizeof(kMenuGenericEdit[0]);
+// --- NODE IMPLEMENTATION ---
 
-const MenuItem kMenuPostEdit[] = {
-    {"BACK",    TYPE_BACK,  0,              kMenuMain, 0},
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0}, 
-    {"Pre",     TYPE_PARAM, PARAM_PRE_GAIN, nullptr, 0}
-};
-const int kMenuPostEditSize = sizeof(kMenuPostEdit) / sizeof(kMenuPostEdit[0]);
+void Processing::Node::Init(const char* n, int type)
+{
+    name = n;
+    for(int i=0; i<MAX_PARAMS; i++) {
+        params[i] = {"", 0.f, 0.f, false, -1, -1};
+        map_amounts[i] = 0.0f;
+    }
 
-const MenuItem kMenuBpmEdit[] = {
-    {"BACK",    TYPE_BACK,  0,              kMenuMain, 0},
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0},
-    {"Div",     TYPE_PARAM, PARAM_DIVISION, nullptr, 0}
-};
-const int kMenuBpmEditSize = sizeof(kMenuBpmEdit) / sizeof(kMenuBpmEdit[0]);
+    if (type == 1) // "Complex" (Dummy Node)
+    {
+        param_count = 4;
+        params[0] = {"VOL", 0.5f, 0.5f, true, 4, -1};
+        params[1] = {"PAN", 0.5f, 0.5f, true, 5, -1};
+        params[2] = {"REV", 0.2f, 0.2f, true, 6, -1};
+        params[3] = {"DLY", 0.3f, 0.3f, true, 7, -1};
+        // Children
+        params[4] = {" >Att", 0.1f, 0.1f, false, -1, 0};
+        params[5] = {" >Wid", 0.8f, 0.8f, false, -1, 1};
+        params[6] = {" >Dec", 0.4f, 0.4f, false, -1, 2};
+        params[7] = {" >Fbk", 0.5f, 0.5f, false, -1, 3};
+    }
+    else // "Simple" (Pre/Post)
+    {
+        param_count = 1; 
+        params[0] = {"GAIN", 0.8f, 0.8f, false, -1, -1};
+    }
+}
 
-const MenuItem kMenuGrainsEdit[] = {
-    {"BACK",    TYPE_BACK,  0,              kMenuMain, 0},
-    {"Map Amt", TYPE_PARAM, PARAM_MAP_AMT,  nullptr, 0},
-    {"Spray",   TYPE_PARAM, PARAM_SPRAY,    nullptr, 0},
-    {"Stereo",  TYPE_PARAM, PARAM_STEREO,   nullptr, 0}
-};
-const int kMenuGrainsEditSize = sizeof(kMenuGrainsEdit) / sizeof(kMenuGrainsEdit[0]);
+float Processing::Node::Process(float in)
+{
+    float gain = params[0].effective_value;
+    return in * gain;
+}
 
-const MenuItem kMenuMain[] = {
-    {"Post",    TYPE_PARAM_SUBMENU, PARAM_POST_GAIN,    kMenuPostEdit,    kMenuPostEditSize},
-    {"Fbk",     TYPE_PARAM,         PARAM_FEEDBACK,     nullptr,          0},
-    {"Mix",     TYPE_PARAM,         PARAM_MIX,          nullptr,          0},
-    {"BPM",     TYPE_PARAM_SUBMENU, PARAM_BPM,          kMenuBpmEdit,     kMenuBpmEditSize},
-    {"Pitch",   TYPE_PARAM,         PARAM_PITCH,        nullptr,          0},
-    {"Size",    TYPE_PARAM,         PARAM_GRAIN_SIZE,   nullptr,          0},
-    {"Grains",  TYPE_PARAM_SUBMENU, PARAM_GRAINS,       kMenuGrainsEdit,  kMenuGrainsEditSize}
-};
-const int kMenuMainSize = sizeof(kMenuMain) / sizeof(kMenuMain[0]);
 
-float DSY_SDRAM_BSS Processing::buffer[MAX_BUFFER_SAMPLES];
-Processing::Grain Processing::grains_l[MAX_GRAINS];
-Processing::Grain Processing::grains_r[MAX_GRAINS];
+// --- MAIN PROCESSING ---
 
 void Processing::Init(Hardware &hw)
 {
-    memset(buffer, 0, MAX_BUFFER_SAMPLES * sizeof(float));
-    sample_rate_ = hw.sample_rate;
-    params[PARAM_PRE_GAIN] = 0.5f; params[PARAM_FEEDBACK] = 0.5f; params[PARAM_MIX] = 0.5f;
-    params[PARAM_POST_GAIN] = 0.5f; params[PARAM_BPM] = 120.0f; params[PARAM_DIVISION] = 1.0f; 
-    params[PARAM_PITCH] = 1.0f; params[PARAM_GRAIN_SIZE] = 0.1f; params[PARAM_GRAINS] = 10.0f; 
-    params[PARAM_SPRAY] = 0.0f; params[PARAM_STEREO] = 0.0f;
-    for(int i=0; i<PARAM_COUNT; i++) {
-        knob_map_amounts[i] = 0.0f; 
-        effective_params[i] = params[i]; 
-    }
-    snprintf(parent_menu_name, sizeof(parent_menu_name), " ");
-    division_idx = 0; params[PARAM_DIVISION] = (float)division_vals[division_idx];
-    last_looper_toggle = 0;
-    long_press_active = false;
-    UpdateBufferLen();
-    UpdateGrainParams();
+    nodes[0].Init("PRE", 0);
+    nodes[1].Init("DUMMY", 1);
+    nodes[2].Init("POST", 0);
 }
 
 void Processing::Controls(Hardware &hw)
 {
+    float pot_val = hw.pot.Process();
+    
     hw.encoder.Debounce();
     hw.button.Debounce();
-    hw.pot.Process();
 
-    float pot_val = hw.pot.Value();
-    for (int i = 0; i < PARAM_COUNT; i++) {
-        if (i == PARAM_DIVISION || i == PARAM_MAP_AMT) { continue; }
-        float base = params[i]; float map = knob_map_amounts[i]; float range = 1.0f; float min_v = 0.0f; float max_v = 1.0f;
-        switch(i) {
-            case PARAM_BPM: min_v = 20.0f; max_v = 300.0f; range = 280.0f; break;
-            case PARAM_PITCH: min_v = 0.25f; max_v = 4.0f; range = 3.75f; break; 
-            case PARAM_GRAIN_SIZE: min_v = 0.002f; max_v = 0.5f; range = 0.498f; break;
-            case PARAM_GRAINS: min_v = 0.5f; max_v = 50.0f; range = 49.5f; break;
-            default: break;
+    int32_t enc_inc = hw.encoder.Increment();
+    bool    clicked = hw.encoder.RisingEdge() || hw.button.RisingEdge();
+    bool    held    = hw.encoder.TimeHeldMs() >= 600;
+
+    // --- HOLD LOGIC ---
+    if (held && !hold_handled)
+    {
+        hold_handled = true;
+        
+        if (current_node_idx == -1) 
+        {
+            node_settings = !node_settings; 
         }
-        effective_params[i] = fclamp(base + (pot_val * map * range), min_v, max_v);
-    }
-    UpdateBufferLen(); 
-
-    bool btn_pressed = hw.button.Pressed();
-    bool btn_rising  = hw.button.RisingEdge();
-    uint32_t now = System::GetNow();
-
-    if(btn_pressed && !long_press_active && hw.button.TimeHeldMs() > 1000) {
-        hw.Reset(); 
-        long_press_active = true; 
-        trigger_blink = true;
-    }
-    if(!btn_pressed) { long_press_active = false; }
-
-    if(btn_rising && !long_press_active) {
-        if (now - last_looper_toggle > 50) { 
-            trigger_blink = true;
-            if (now - last_looper_toggle < 300) {
-                hw.looper_mode = Hardware::LP_STOPPED;
-            } 
-            else {
-                if (hw.looper_mode == Hardware::LP_EMPTY) {
-                    hw.looper_mode = Hardware::LP_RECORDING;
-                    hw.rec_pos = 0;
-                } 
-                else if (hw.looper_mode == Hardware::LP_RECORDING) {
-                    hw.SwitchToNewLoop(); 
-                    hw.looper_mode = Hardware::LP_PLAYING;
-                } 
-                else if (hw.looper_mode == Hardware::LP_PLAYING) {
-                    hw.looper_mode = Hardware::LP_RECORDING;
-                    hw.rec_pos = 0;
-                }
-                else if (hw.looper_mode == Hardware::LP_STOPPED) {
-                    hw.play_pos = 0; 
-                    hw.looper_mode = Hardware::LP_PLAYING;
+        else 
+        {
+            Node& active_node = nodes[current_node_idx];
+            if (!advanced_mode)
+            {
+                if(param_cursor >= 0) 
+                {
+                    advanced_mode = true;
+                    viewing_param = param_cursor;
+                    adv_cursor = 0; 
+                    edit_state = false;
                 }
             }
-            last_looper_toggle = now;
-        }
-    }
-
-    int32_t inc = hw.encoder.Increment();
-
-    if(hw.encoder.RisingEdge()) {
-        enc_hold_start = System::GetNow();
-        enc_is_holding = true;
-    }
-
-    if(enc_is_holding && hw.encoder.TimeHeldMs() >= kHoldTimeMs) {
-        enc_is_holding = false; 
-        const MenuItem& item = GetSelectedItem();
-        if (ui_state == STATE_MENU_NAV) {
-            if(item.type == TYPE_PARAM || item.type == TYPE_PARAM_SUBMENU) {
-                snprintf(parent_menu_name, sizeof(parent_menu_name), "%s", item.name);
-                edit_param_target = item.param_id; 
-                if (item.type == TYPE_PARAM) {
-                    current_menu = kMenuGenericEdit; current_menu_size = kMenuGenericEditSize;
-                } else {
-                    current_menu = item.submenu; current_menu_size = item.num_children;
+            else
+            {
+                if (adv_cursor == 1 && active_node.params[viewing_param].has_child)
+                {
+                    viewing_param = active_node.params[viewing_param].child_id;
+                    adv_cursor = 0;
+                    edit_state = false;
                 }
-                selected_item_idx = 1; view_top_item_idx = 1; 
+                else
+                {
+                    bool is_child = (viewing_param >= active_node.param_count); 
+                    if(is_child) {
+                        viewing_param = active_node.params[viewing_param].parent_id;
+                        adv_cursor = 1; 
+                    } else {
+                        advanced_mode = false;
+                    }
+                }
             }
         }
     }
+    else if (!hw.encoder.Pressed())
+    {
+        hold_handled = false;
+    }
 
-    if(hw.encoder.FallingEdge()) {
-        if(enc_is_holding) {
-            enc_is_holding = false;
-            const MenuItem& item = GetSelectedItem();
-            if (ui_state == STATE_MENU_NAV) {
-                switch(item.type) {
-                    case TYPE_PARAM: 
-                    case TYPE_PARAM_SUBMENU: ui_state = STATE_PARAM_EDIT; break;
-                    case TYPE_SUBMENU:
-                        current_menu = item.submenu; current_menu_size = item.num_children;
-                        selected_item_idx = 0; view_top_item_idx = 0; break;
-                    case TYPE_BACK:
-                        current_menu = item.submenu; current_menu_size = (current_menu == kMenuMain) ? kMenuMainSize : 0; 
-                        selected_item_idx = 0; view_top_item_idx = 0; break;
+    // --- INTERACTION ---
+    if (!held) 
+    {
+        // 1. ROOT LEVEL
+        if (current_node_idx == -1)
+        {
+            if(node_settings)
+            {
+                if(clicked) node_settings = false; 
+            }
+            else
+            {
+                if (enc_inc != 0)
+                {
+                    root_cursor += (enc_inc > 0 ? 1 : -1);
+                    if(root_cursor < 0) root_cursor = NODE_COUNT - 1;
+                    if(root_cursor >= NODE_COUNT) root_cursor = 0;
                 }
-            } else { ui_state = STATE_MENU_NAV; }
+                if (clicked)
+                {
+                    current_node_idx = root_cursor;
+                    param_cursor = 0; 
+                    enc_click_pending = true;
+                    enc_click_time = System::GetNow();
+                }
+            }
+        }
+        // 2. NODE LEVEL
+        else
+        {
+            Node& node = nodes[current_node_idx];
+
+            if (advanced_mode)
+            {
+                if (edit_state)
+                {
+                    if (adv_cursor == 0) // Map
+                        node.map_amounts[viewing_param] = fclamp(node.map_amounts[viewing_param] + (enc_inc * 0.05f), -1.0f, 1.0f);
+                    else if (adv_cursor == 1) // Child
+                    {
+                        int c_idx = node.params[viewing_param].child_id;
+                        node.params[c_idx].base_value = fclamp(node.params[c_idx].base_value + (enc_inc * 0.05f), 0.0f, 1.0f);
+                    }
+                    if (clicked) edit_state = false;
+                }
+                else
+                {
+                    if (enc_inc != 0)
+                    {
+                        adv_cursor += (enc_inc > 0 ? 1 : -1);
+                        int max_c = node.params[viewing_param].has_child ? 1 : 0;
+                        if(adv_cursor < -1) adv_cursor = -1;
+                        if(adv_cursor > max_c) adv_cursor = max_c;
+                    }
+                    if (clicked)
+                    {
+                        if(adv_cursor == -1) {
+                            bool is_child = (viewing_param >= node.param_count);
+                            if(is_child) {
+                                viewing_param = node.params[viewing_param].parent_id;
+                                adv_cursor = 1;
+                            } else {
+                                advanced_mode = false;
+                            }
+                        } else {
+                            edit_state = true;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if (edit_state)
+                {
+                    if (enc_inc != 0)
+                        node.params[param_cursor].base_value = fclamp(node.params[param_cursor].base_value + (enc_inc * 0.05f), 0.0f, 1.0f);
+                    if (clicked) edit_state = false;
+                }
+                else
+                {
+                    if (enc_inc != 0)
+                    {
+                        param_cursor += (enc_inc > 0 ? 1 : -1);
+                        if(param_cursor < -1) param_cursor = -1;
+                        if(param_cursor >= node.param_count) param_cursor = node.param_count - 1;
+                    }
+
+                    if (clicked)
+                    {
+                        if (param_cursor == -1) current_node_idx = -1;
+                        else edit_state = true;
+                    }
+                }
+            }
         }
     }
 
-    if(inc != 0) {
-        if(ui_state == STATE_MENU_NAV) {
-            selected_item_idx += inc;
-            if(selected_item_idx < 0) { selected_item_idx = 0; }
-            if(selected_item_idx >= current_menu_size) { selected_item_idx = current_menu_size - 1; }
-
-            if (current_menu == kMenuMain) {
-                if(selected_item_idx < view_top_item_idx) { view_top_item_idx = selected_item_idx; }
-                else if(selected_item_idx >= view_top_item_idx + 4) { view_top_item_idx = selected_item_idx - 3; }
-            } else {
-                if (selected_item_idx == 0) { view_top_item_idx = 1; }
-                else {
-                    if(selected_item_idx < view_top_item_idx) { view_top_item_idx = selected_item_idx; }
-                    else if(selected_item_idx >= view_top_item_idx + 4) { view_top_item_idx = selected_item_idx - 3; }
-                }
-            }
-        } else {
-            int param_id = GetSelectedItem().param_id;
-            if (param_id == PARAM_MAP_AMT) {
-                float val = knob_map_amounts[edit_param_target];
-                val += (float)inc * 0.05f; 
-                knob_map_amounts[edit_param_target] = fclamp(val, -1.0f, 1.0f);
-            } else {
-                float val = params[param_id]; float delta = 0.01f * inc; 
-                switch(param_id) {
-                    case PARAM_PRE_GAIN: 
-                    case PARAM_POST_GAIN: 
-                    case PARAM_FEEDBACK: 
-                    case PARAM_MIX: 
-                    case PARAM_STEREO: 
-                    case PARAM_SPRAY: params[param_id] = fclamp(val + delta, 0.0f, 1.0f); break;
-                    case PARAM_BPM: params[param_id] = fclamp(val + (delta * 100.0f), 20.0f, 300.0f); break;
-                    case PARAM_DIVISION:
-                        division_idx += (inc > 0 ? 1 : -1);
-                        if(division_idx < 0) { division_idx = 0; }
-                        if(division_idx > 3) { division_idx = 3; }
-                        params[param_id] = (float)division_vals[division_idx]; break;
-                    case PARAM_PITCH: 
-                        val = 12.0f * log2f(val); val += (delta * 100.0f); val = fclamp(val, -24.0f, 24.0f); 
-                        params[param_id] = powf(2.0f, val / 12.0f); break;
-                    case PARAM_GRAIN_SIZE: {
-                        float vel_mod = fminf((float)abs(inc) * 0.5f, 5.0f);
-                        params[param_id] = fclamp(val + ((inc > 0 ? 1.0f : -1.0f) * (0.001f + (0.005f * vel_mod))), 0.002f, 0.5f);
-                    } break;
-                    case PARAM_GRAINS: params[param_id] = fclamp(val + (delta * 10.0f), 0.5f, 50.0f); UpdateGrainParams(); break;
-                }
-            }
+    // --- UPDATE VALUES ---
+    for(int n=0; n<NODE_COUNT; n++)
+    {
+        for(int i=0; i<Node::MAX_PARAMS; i++)
+        {
+            if(nodes[n].params[i].name[0] == '\0') continue;
+            
+            float mod = pot_val * nodes[n].map_amounts[i];
+            nodes[n].params[i].effective_value = fclamp(nodes[n].params[i].base_value + mod, 0.0f, 1.0f);
         }
     }
 }
 
-void Processing::UpdateBufferLen() {
-    float bpm = effective_params[PARAM_BPM]; float division = params[PARAM_DIVISION]; 
-    float loop_len_sec = (1.0f / (bpm / 60.0f)) * (4.0f / division);
-    buffer_len_samples = (uint32_t)(loop_len_sec * sample_rate_);
-    if(buffer_len_samples > MAX_BUFFER_SAMPLES) { buffer_len_samples = MAX_BUFFER_SAMPLES; }
-    if(buffer_len_samples < 4) { buffer_len_samples = 4; }
-    if(write_pos >= buffer_len_samples) { write_pos = 0; }
-}
-
-void Processing::UpdateGrainParams() {
-    float density_hz = effective_params[PARAM_GRAINS]; float stereo_amt = effective_params[PARAM_STEREO];
-    if(density_hz < 0.1f) { density_hz = 0.1f; } float base_int = sample_rate_ / density_hz;
-    float l_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt); 
-    float r_rand = (1.0f - stereo_amt) + (rand_.Process() * stereo_amt);
-    grain_trig_interval_l = (uint32_t)(base_int * l_rand); 
-    grain_trig_interval_r = (uint32_t)(base_int * r_rand);
-    if(grain_trig_interval_l == 0) { grain_trig_interval_l = 1; }
-    if(grain_trig_interval_r == 0) { grain_trig_interval_r = 1; }
-}
-
-void Processing::GetSample(float &outl, float &outr, float inl, float inr) {
-    float pre_gain = effective_params[PARAM_PRE_GAIN] * 2.0f; 
-    float fbk = effective_params[PARAM_FEEDBACK];
-    float mix = effective_params[PARAM_MIX]; 
-    float post_gain = effective_params[PARAM_POST_GAIN] * 2.0f;
-    float stereo = effective_params[PARAM_STEREO]; float spray = effective_params[PARAM_SPRAY];
-    float inl_g = inl * pre_gain; float inr_g = inr * pre_gain;
-    float wet_in = (inl_g + inr_g) * 0.5f; 
-    
-    float old_samp = buffer[write_pos];
-    buffer[write_pos] = fclamp(wet_in + (old_samp * fbk), -1.0f, 1.0f);
-    
-    if(grain_trig_counter_l == 0) {
-        float sz_mod = (1.0f - stereo) + (rand_.Process() * stereo);
-        uint32_t sz = (uint32_t)(effective_params[PARAM_GRAIN_SIZE] * sample_rate_ * sz_mod);
-        float start = (float)write_pos - (rand_.Process() * spray * 0.5f * sample_rate_);
-        for(int i = 0; i < MAX_GRAINS; i++) { 
-            if(!grains_l[i].active) { grains_l[i].Start(start, effective_params[PARAM_PITCH], sz, sample_rate_, buffer_len_samples); break; }
-        }
-        UpdateGrainParams(); grain_trig_counter_l = grain_trig_interval_l;
-    } grain_trig_counter_l--;
-
-    if(grain_trig_counter_r == 0) {
-        float sz_mod = (1.0f - stereo) + (rand_.Process() * stereo);
-        uint32_t sz = (uint32_t)(effective_params[PARAM_GRAIN_SIZE] * sample_rate_ * sz_mod);
-        float start = (float)write_pos - (rand_.Process() * spray * 0.5f * sample_rate_);
-        for(int i = 0; i < MAX_GRAINS; i++) { 
-            if(!grains_r[i].active) { grains_r[i].Start(start, effective_params[PARAM_PITCH], sz, sample_rate_, buffer_len_samples); break; }
-        }
-        grain_trig_counter_r = grain_trig_interval_r;
-    } grain_trig_counter_r--;
-
-    float wet_l = 0.0f; float wet_r = 0.0f;
-    for(int i = 0; i < MAX_GRAINS; i++) { 
-        wet_l += grains_l[i].Process(buffer, buffer_len_samples); 
-        wet_r += grains_r[i].Process(buffer, buffer_len_samples); 
+void Processing::ProcessAudio(float &outl, float &outr, float inl, float inr)
+{
+    float sig_l = inl;
+    float sig_r = inr;
+    for(int i=0; i<NODE_COUNT; i++)
+    {
+        sig_l = nodes[i].Process(sig_l);
+        sig_r = nodes[i].Process(sig_r);
     }
-    wet_l *= 0.5f; wet_r *= 0.5f;
-    write_pos++; if(write_pos >= buffer_len_samples) { write_pos = 0; }
+    outl = sig_l;
+    outr = sig_r;
     
-    outl = (inl_g * (1.0f - mix) + wet_l * mix) * post_gain; 
-    outr = (inr_g * (1.0f - mix) + wet_r * mix) * post_gain;
 }

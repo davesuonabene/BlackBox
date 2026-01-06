@@ -1,204 +1,255 @@
 #include "screen.h"
 #include <cstdio>
-#include <string.h> 
-#include <math.h>   
-#include "processing.h" 
+#include <cstring>
 
 using namespace daisy;
-using daisy::OledDisplay;
 
-static daisy::OledDisplay<daisy::SSD130xI2c128x64Driver> display;
+static OledDisplay<SSD130xI2c128x64Driver> display;
 
-const int kSelectorColX = 0;
-const int kTextColX     = 5;
-const int kTextColWidth = 55; 
-const int kBarColX      = 64; 
-const int kBarColWidth  = 64; 
+// --- HELPERS ---
 
-static void DrawCharRot180(OledDisplay<OledDriver> &disp, int x, int y, char ch, const FontDef &font, bool on) {
-    if(ch < 32 || ch > 126) { return; }
-    for(int i = 0; i < (int)font.FontHeight; i++) {
-        uint32_t rowBits = font.data[(ch - 32) * font.FontHeight + i];
-        for(int j = 0; j < (int)font.FontWidth; j++) {
-            bool bit_on = (rowBits << j) & 0x8000;
-            int  rx     = (int)disp.Width() - 1 - (x + j);
-            int  ry     = (int)disp.Height() - 1 - (y + i);
-            if(rx >= 0 && ry >= 0 && rx < (int)disp.Width() && ry < (int)disp.Height()) {
-                disp.DrawPixel((uint_fast8_t)rx, (uint_fast8_t)ry, bit_on ? on : !on);
+static void DrawRectRot180(OledDisplay<OledDriver> &disp, int x, int y, int w, int h, bool on)
+{
+    for(int i = 0; i < w; i++)
+    {
+        for(int j = 0; j < h; j++)
+        {
+            int rx = disp.Width() - 1 - (x + i);
+            int ry = disp.Height() - 1 - (y + j);
+            if(rx >= 0 && ry >= 0 && rx < (int)disp.Width() && ry < (int)disp.Height())
+            {
+                disp.DrawPixel(rx, ry, on);
             }
         }
     }
 }
 
-static void DrawStringRot180(OledDisplay<OledDriver> &disp, int x, int y, const char * str, const FontDef &font, bool on) {
+// Draw String with optional background inversion
+// v_padding: Adds pixels to top and bottom of the background rect
+static void DrawStringRot180(OledDisplay<OledDriver> &disp, int x, int y, const char *str, const FontDef &font, bool on, bool invert_bg, bool full_width = false, int h_padding = 1, int v_padding = 0)
+{
+    int str_w = 0;
+    const char* s = str;
+    while(*s++) str_w += font.FontWidth;
+    
+    if (invert_bg)
+    {
+        int bg_x, bg_y, bg_w, bg_h;
+
+        // Vertical Calculation
+        bg_y = y - v_padding;
+        bg_h = font.FontHeight + (v_padding * 2);
+
+        // Horizontal Calculation
+        if (full_width)
+        {
+            bg_x = 0;
+            bg_w = disp.Width();
+        }
+        else
+        {
+            bg_x = x - h_padding;
+            bg_w = str_w + (h_padding * 2);
+        }
+
+        // Draw background
+        DrawRectRot180(disp, bg_x, bg_y, bg_w, bg_h, on);
+        
+        // Text color is inverted
+        on = !on;
+    }
+
     int cx = x;
-    while(*str) { 
-        DrawCharRot180(disp, cx, y, *str, font, on); 
-        cx += font.FontWidth; 
-        ++str; 
-    }
-}
-
-static void DrawSelectionIndicator(int y, bool engaged) {
-    int rx = display.Width() - 1 - kSelectorColX;
-    int ry_start = display.Height() - 1 - (y + 9);
-    int ry_end = display.Height() - 1 - y;
-    display.DrawLine(rx, ry_start, rx, ry_end, true);
-    if (engaged) { display.DrawLine(rx + 2, ry_start, rx + 2, ry_end, true); }
-}
-
-static void DrawHighlightBox(OledDisplay<OledDriver> &disp, int x, int y, int_fast16_t w, int_fast16_t h, bool on) {
-    int rx = disp.Width() - 1 - (x + w - 1);
-    int ry = disp.Height() - 1 - (y + h - 1);
-    disp.DrawRect(rx, ry, rx + w - 1, ry + h - 1, on, true);
-}
-
-static float GetNormVal(int param_id, float val, int div_idx) {
-    float norm = 0.0f;
-    switch(param_id) {
-        case PARAM_PRE_GAIN: 
-        case PARAM_POST_GAIN: 
-        case PARAM_FEEDBACK: 
-        case PARAM_MIX: 
-        case PARAM_STEREO: 
-        case PARAM_SPRAY:     norm = val; break;
-        case PARAM_BPM:       norm = (val - 20.f) / (300.f - 20.f); break;
-        case PARAM_DIVISION:  norm = (float)div_idx / 3.0f; break;
-        case PARAM_PITCH:     norm = (12.0f * log2f(val) + 24.f) / 48.f; break;
-        case PARAM_GRAIN_SIZE: norm = (val - 0.002f) / (0.5f - 0.002f); break;
-        case PARAM_GRAINS:    norm = (val - 0.5f) / (50.f - 0.5f); break;
-        default: break;
-    }
-    return fclamp(norm, 0.0f, 1.0f);
-}
-
-static void DrawValueBar(int y, float norm_base, float norm_eff) {
-    int bar_h  = 8; 
-    int w_base = (int)(norm_base * (float)kBarColWidth);
-    int w_eff  = (int)(norm_eff  * (float)kBarColWidth);
-
-    // 1. Draw solid base bar
-    int rx_base_s = display.Width() - 1 - (kBarColX + w_base - 1);
-    int rx_base_e = display.Width() - 1 - (kBarColX);
-    int ry_s = display.Height() - 1 - (y + bar_h - 1);
-    int ry_e = display.Height() - 1 - y;
-    if (w_base > 0) {
-        display.DrawRect(rx_base_s, ry_s, rx_base_e, ry_e, true, true);
-    }
-
-    // 2. Draw modulation markers (> or <)
-    if (w_eff > w_base) {
-        // Positive modulation: Draw >
-        for (int x = w_base + 2; x < w_eff; x += 4) {
-            DrawCharRot180(display, kBarColX + x, y, '>', Font_6x8, true);
+    while(*str)
+    {
+        if(*str >= 32 && *str <= 126)
+        {
+            for(int i = 0; i < (int)font.FontHeight; i++)
+            {
+                uint32_t row = font.data[(*str - 32) * font.FontHeight + i];
+                for(int j = 0; j < (int)font.FontWidth; j++)
+                {
+                    if((row << j) & 0x8000)
+                    {
+                        disp.DrawPixel(disp.Width() - 1 - (cx + j), disp.Height() - 1 - (y + i), on);
+                    }
+                }
+            }
         }
-    } else if (w_eff < w_base) {
-        // Negative modulation: Draw <
-        for (int x = w_base - 6; x >= w_eff; x -= 4) {
-            DrawCharRot180(display, kBarColX + x, y, '<', Font_6x8, true);
+        cx += font.FontWidth;
+        ++str;
+    }
+}
+
+static void DrawBarModRot180(OledDisplay<OledDriver> &disp, int x, int y, int w, int h, float base, float effective, bool on)
+{
+    int base_w = (int)(w * base);
+    int eff_w  = (int)(w * effective);
+    if(base_w < 0) base_w = 0; if(base_w > w) base_w = w;
+    if(eff_w < 0) eff_w = 0; if(eff_w > w) eff_w = w;
+
+    for(int i=0; i<w; i++)
+    {
+        int solid_limit = (base_w < eff_w) ? base_w : eff_w;
+        bool is_solid   = (i < solid_limit);
+        bool is_mod_pos = (i >= base_w && i < eff_w);
+        bool is_mod_neg = (i >= eff_w && i < base_w);
+        bool is_border  = (i == 0 || i == w - 1);
+
+        for(int j=0; j<h; j++)
+        {
+            bool pixel_on = false;
+            bool is_tb_border = (j == 0 || j == h - 1);
+            
+            if (is_border || is_tb_border) pixel_on = true;
+            else if (is_solid) pixel_on = true;
+            else if (is_mod_pos) {
+                int p = i % 4; int mid = h / 2;
+                if ((p==0 && (j==mid-2 || j==mid+2)) || (p==1 && (j==mid-1 || j==mid+1)) || (p==2 && j==mid)) pixel_on = true;
+            }
+            else if (is_mod_neg) {
+                int p = i % 4; int mid = h / 2;
+                if ((p==2 && (j==mid-2 || j==mid+2)) || (p==1 && (j==mid-1 || j==mid+1)) || (p==0 && j==mid)) pixel_on = true;
+            }
+            if(pixel_on) disp.DrawPixel(disp.Width() - 1 - (x + i), disp.Height() - 1 - (y + j), on);
         }
     }
 }
 
-void Screen::Init(DaisySeed &seed) {
+// --- MAIN CLASS ---
+
+void Screen::Init(DaisySeed &seed)
+{
     OledDisplay<OledDriver>::Config disp_cfg;
     disp_cfg.driver_config.transport_config.i2c_config.periph = I2CHandle::Config::Peripheral::I2C_1;
+    disp_cfg.driver_config.transport_config.i2c_config.mode   = I2CHandle::Config::Mode::I2C_MASTER;
+    disp_cfg.driver_config.transport_config.i2c_config.speed  = I2CHandle::Config::Speed::I2C_1MHZ;
     disp_cfg.driver_config.transport_config.i2c_config.pin_config.sda = seed.GetPin(12);
     disp_cfg.driver_config.transport_config.i2c_config.pin_config.scl = seed.GetPin(11);
+    disp_cfg.driver_config.transport_config.i2c_address = 0x3C;
     display.Init(disp_cfg);
+    display.Fill(false);
+    display.Update();
 }
 
-void Screen::Blink(uint32_t now) { blink_active = true; blink_start = now; }
+void Screen::Blink(uint32_t now)
+{
+    blink_active = true;
+    blink_start  = now;
+}
 
-void Screen::DrawStatus(Processing &proc, Hardware &hw) {
-    if (proc.trigger_blink) { Blink(System::GetNow()); proc.trigger_blink = false; }
+void Screen::DrawStatus(Processing& proc)
+{
+    if(blink_active && (System::GetNow() - blink_start) < 50) {
+        display.Fill(true); display.Update(); return;
+    }
+    blink_active = false;
     display.Fill(false);
-    if (blink_active && (System::GetNow() - blink_start < 100)) { display.Fill(true); display.Update(); return; }
-
-    bool is_main = (proc.current_menu == kMenuMain);
     
-    // Header
-    if (!is_main) {
-        DrawStringRot180(display, kTextColX, 0, proc.parent_menu_name, Font_7x10, true);
-        bool back_sel = (proc.selected_item_idx == 0);
-        int back_x = 90;
-        if (back_sel) { DrawHighlightBox(display, back_x, 0, 35, 10, true); }
-        DrawStringRot180(display, back_x + 3, 0, "BACK", Font_7x10, !back_sel);
-    }
+    char line[32];
 
-    // Scrollable List
-    int y_start = is_main ? 0 : 12;
-    for(int i = 0; i < 4; i++) {
-        int idx = proc.view_top_item_idx + i;
-        if(idx >= proc.current_menu_size) { break; }
+    // --- 1. ROOT LEVEL VIEW (Nodes) ---
+    if (proc.current_node_idx == -1)
+    {
+        int item_h = 14; 
+        int total_h = Processing::NODE_COUNT * item_h;
+        int start_y = (64 - total_h) / 2;
 
-        const MenuItem& item = proc.current_menu[idx];
-        bool sel = (idx == proc.selected_item_idx);
-        bool edit = (sel && proc.ui_state == proc.STATE_PARAM_EDIT);
-        int y = y_start + i * 11;
-
-        char value_str[24] = "";
-        float n_b = 0.0f, n_e = 0.0f;
-
-        if (item.type == TYPE_PARAM || item.type == TYPE_PARAM_SUBMENU) {
-            float v_b = proc.params[item.param_id];
-            float v_e = proc.effective_params[item.param_id];
-
-            if (item.param_id == PARAM_MAP_AMT) {
-                float amt = proc.knob_map_amounts[proc.edit_param_target];
-                snprintf(value_str, sizeof(value_str), "%d%%", (int)(amt * 100.f));
-                n_b = n_e = (amt + 1.f) * 0.5f;
-            } else {
-                switch(item.param_id) {
-                    case PARAM_PRE_GAIN: 
-                    case PARAM_POST_GAIN: snprintf(value_str, 24, "%d%%", (int)(v_b * 200.f)); break;
-                    case PARAM_MIX:
-                    case PARAM_FEEDBACK:
-                    case PARAM_STEREO:
-                    case PARAM_SPRAY:     snprintf(value_str, 24, "%d%%", (int)(v_b * 100.f)); break;
-                    case PARAM_BPM:       snprintf(value_str, 24, "%d BPM", (int)v_b); break;
-                    case PARAM_DIVISION:  snprintf(value_str, 24, "1/%d", (int)v_b); break;
-                    case PARAM_PITCH: {
-                        float st = 12.f * log2f(v_b);
-                        snprintf(value_str, 24, "%+.1fst", st);
-                    } break;
-                    case PARAM_GRAIN_SIZE: snprintf(value_str, 24, "%dms", (int)(v_b * 1000.f)); break;
-                    case PARAM_GRAINS:     snprintf(value_str, 24, "%dHz", (int)v_b); break;
-                }
-                n_b = GetNormVal(item.param_id, v_b, proc.division_idx);
-                n_e = GetNormVal(item.param_id, v_e, proc.division_idx);
+        if(proc.node_settings)
+        {
+             DrawStringRot180(display, 0, 0, "[SETTINGS]", Font_7x10, true, false);
+             DrawStringRot180(display, 0, 15, "Node Setup...", Font_6x8, true, false);
+        }
+        else
+        {
+            for(int i=0; i<Processing::NODE_COUNT; i++)
+            {
+                bool sel = (i == proc.root_cursor);
+                int y = start_y + i * item_h;
+                
+                snprintf(line, sizeof(line), " %s", proc.nodes[i].name);
+                // v_padding = 2 -> Total height 10+4 = 14px
+                DrawStringRot180(display, 0, y, line, Font_7x10, true, sel, true, 1, 2); 
             }
-            DrawValueBar(y, n_b, n_e);
-        }
-
-        if (sel) { DrawSelectionIndicator(y, edit); }
-        if (edit) {
-            DrawHighlightBox(display, kTextColX, y - 1, kTextColWidth, 10, true);
-            DrawStringRot180(display, kTextColX + 1, y, value_str, Font_7x10, false);
-        } else {
-            DrawStringRot180(display, kTextColX + 1, y, item.name, Font_7x10, true);
         }
     }
+    // --- 2. NODE PARAMETER VIEW ---
+    else
+    {
+        auto& node = proc.nodes[proc.current_node_idx];
+        
+        // Header
+        // Using v_padding=2 gives it a boxy look if highlighted
+        if(proc.advanced_mode) {
+             if(proc.adv_cursor == -1) DrawStringRot180(display, 0, 0, " < BACK", Font_7x10, true, true, true, 1, 2);
+             else DrawStringRot180(display, 0, 0, " ADVANCED", Font_7x10, true, false);
+        } else if(proc.param_cursor == -1) {
+             DrawStringRot180(display, 0, 0, " < BACK", Font_7x10, true, true, true, 1, 2); 
+        } else if(proc.edit_state) {
+             DrawStringRot180(display, 0, 0, " EDITING", Font_7x10, true, false);
+        } else {
+             snprintf(line, sizeof(line), " %s", node.name);
+             DrawStringRot180(display, 0, 0, line, Font_7x10, true, false);
+        }
 
-    // Looper Row
-    int y_looper = 54;
-    const char* mode_str = "---";
-    if (hw.looper_mode == Hardware::LP_RECORDING) { mode_str = "REC"; }
-    else if (hw.looper_mode == Hardware::LP_PLAYING) { mode_str = "PLY"; }
-    else if (hw.looper_mode == Hardware::LP_STOPPED) { mode_str = "STP"; }
-    DrawStringRot180(display, 0, y_looper, mode_str, Font_7x10, true);
+        int y_list_start = 14; 
+        int row_h = 12;
+        int bar_h = 10;
+        int bar_y_off = 1;
 
-    if (hw.looper_mode != Hardware::LP_EMPTY) {
-        float prog = (hw.looper_mode == Hardware::LP_RECORDING) ? (float)hw.rec_pos / (LOOPER_MAX_SAMPLES/2) : (hw.loop_length > 0 ? (float)hw.play_pos / hw.loop_length : 0.0f);
-        int bar_x = 30, bar_w = 98, bar_h = 8;
-        int rx_s = display.Width() - 1 - (bar_x + bar_w - 1);
-        int rx_e = display.Width() - 1 - bar_x;
-        int ry_s = display.Height() - 1 - (y_looper + bar_h - 1);
-        int ry_e = display.Height() - 1 - y_looper;
-        display.DrawRect(rx_s, ry_s, rx_e, ry_e, true, false);
-        int fill_w = (int)(prog * (float)bar_w);
-        if (fill_w > 0) {
-            display.DrawRect(display.Width() - 1 - (bar_x + fminf(fill_w, bar_w) - 1), ry_s, rx_e, ry_e, true, true);
+        if (proc.advanced_mode)
+        {
+            auto parent = node.params[proc.viewing_param];
+            
+            // Map Row
+            bool sel_map = (proc.adv_cursor == 0);
+            int pct = (int)(node.map_amounts[proc.viewing_param] * 100.0f);
+            
+            // Text Y + 2 for centering relative to 12px row
+            int y_text_map = y_list_start + 2;
+
+            snprintf(line, sizeof(line), " Map Amt");
+            DrawStringRot180(display, 2, y_text_map, line, Font_6x8, true, sel_map, false, 2, 2);
+            
+            snprintf(line, sizeof(line), "%s%d%%", (pct > 0 ? "+" : ""), pct);
+            DrawStringRot180(display, 80, y_text_map, line, Font_6x8, true, sel_map && proc.edit_state, false, 2, 2);
+
+            // Child Row
+            if (parent.has_child)
+            {
+                auto child = node.params[parent.child_id];
+                bool sel_child = (proc.adv_cursor == 1);
+                int y_child = y_list_start + row_h;
+                
+                // Text Y + 2 for centering
+                int y_text_child = y_child + 2;
+
+                snprintf(line, sizeof(line), " %s", child.name);
+                DrawStringRot180(display, 2, y_text_child, line, Font_6x8, true, sel_child, false, 2, 2);
+                
+                DrawBarModRot180(display, 60, y_child + bar_y_off, 60, bar_h, child.base_value, child.effective_value, true);
+                if(sel_child && proc.edit_state) DrawStringRot180(display, 122, y_text_child, "<", Font_6x8, true, false);
+            }
+        }
+        else
+        {
+            // Normal List
+            for(int i=0; i<node.param_count; i++)
+            {
+                int y = y_list_start + (i * row_h);
+                bool is_sel = (i == proc.param_cursor);
+                
+                // Text Y + 2 for centering relative to Bar/Row
+                int y_text = y + 2;
+
+                snprintf(line, sizeof(line), " %s", node.params[i].name);
+                // v_padding = 2 -> Total height 8+4 = 12px
+                DrawStringRot180(display, 2, y_text, line, Font_6x8, true, is_sel, false, 2, 2);
+                
+                DrawBarModRot180(display, 50, y + bar_y_off, 70, bar_h, 
+                                 node.params[i].base_value, 
+                                 node.params[i].effective_value, true);
+            }
         }
     }
     display.Update();
